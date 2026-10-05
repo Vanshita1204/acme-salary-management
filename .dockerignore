@@ -1,0 +1,7 @@
+.git
+**/node_modules
+**/__pycache__
+**/.venv
+backend/.env
+backend/scale_lab/results
+frontend/dist
