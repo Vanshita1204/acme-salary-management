@@ -23,6 +23,7 @@ from app.core.config import get_settings
 from app.db.session import SessionLocal
 from app.domain.currency import rates_to_usd_from_usd_base
 from app.models import Currency, ExchangeRate
+from app.services.errors import Problem, ServiceError
 
 logger = logging.getLogger(__name__)
 
@@ -117,15 +118,19 @@ def last_fetched_at(session: Session) -> datetime | None:
 
 
 def refresh_exchange_rates(
-    session: Session, client: httpx.Client | None = None, *, force: bool = False
+    session: Session,
+    client: httpx.Client | None = None,
+    *,
+    force: bool = False,
+    max_age: timedelta = REFRESH_INTERVAL,
 ) -> RefreshResult:
-    """Fetch and store live rates, unless the stored ones are newer than REFRESH_INTERVAL.
+    """Fetch and store live rates, unless the stored ones were fetched within `max_age`.
 
     On provider failure, logs and leaves stored rates as-is.
     """
     if not force:
         fetched_at = last_fetched_at(session)
-        fresh_cutoff = session.scalar(select(func.now())) - REFRESH_INTERVAL
+        fresh_cutoff = session.scalar(select(func.now())) - max_age
         if fetched_at is not None and fetched_at > fresh_cutoff:
             latest_date = session.scalar(select(func.max(ExchangeRate.rate_date)))
             return RefreshResult(ok=True, rate_date=latest_date, skipped=True)
@@ -151,6 +156,19 @@ def refresh_exchange_rates(
     return RefreshResult(
         ok=True, rate_date=fetched.rate_date, stored=stored, missing=missing
     )
+
+
+UNSUPPORTED_CURRENCY = "unsupported currency: {code}"
+
+
+def require_supported_currency(session: Session, code: str) -> str:
+    """Upper-cased `code`, or a 422 if it isn't a currency the app knows (FR-8's
+    reporting-currency selector). A supported currency without a stored rate is not an
+    error here: conversions into it come back empty instead."""
+    code = code.upper()
+    if session.get(Currency, code) is None:
+        raise ServiceError(Problem.INVALID, UNSUPPORTED_CURRENCY.format(code=code))
+    return code
 
 
 def latest_rates(session: Session) -> tuple[dict[str, Decimal], dict[str, date]]:

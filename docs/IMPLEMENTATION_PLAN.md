@@ -230,7 +230,7 @@ Found during Phase 7: `employees.department`, `.job_title` and `.job_level` are 
   - Directory filters by id and level-rank range are tested; directory latency on the 10k seed is re-measured and stays under target.
   - Levels sort by rank (`L2` before `L10`) in the directory and the level list.
 
-## Phase 8 — Exchange Rates (FR-8)
+## Phase 8 — Exchange Rates (FR-8) — Done
 **Partly done early** (pulled forward so 1.2 could load live rates instead of fixtures):
 - Provider: open.er-api.com (ExchangeRate-API's free, keyless `latest/USD` feed, updated once a day). URL comes from `EXCHANGE_RATE_API_URL`. It quotes every seeded currency except KPW; converting KPW returns a clear 503.
 - `app/services/exchange_rates.py`: fetch → parse → upsert one row per supported currency per `rate_date` (re-fetching the same day updates rather than duplicates); `latest_rates` reads the newest rate per currency (`DISTINCT ON`) with each rate's date. On provider failure: log a warning, keep serving stored rates.
@@ -243,6 +243,20 @@ Found during Phase 7: `employees.department`, `.job_title` and `.job_level` are 
 - Every analytics/profile response that converts currency surfaces the rate date used (the convert endpoint already does).
 - Reporting-currency selector; conversion always routes through stored USD rates.
 - **Done when:** analytics still return correct numbers with the fetch disabled, using the previous day's stored rates — tested by simulating provider failure (already tested at the service level; still needed for the analytics endpoints).
+
+**As built (remaining items):**
+- **Daily scheduling — a worker, `app/jobs/daily.py`:** `python -m app.jobs.daily` runs once (cron: `10 0 * * *`, i.e. 00:10 UTC, shortly after the provider publishes); `--forever` is the long-running worker form (runs at start, then sleeps until the next 00:10 UTC). Each run:
+  1. refreshes rates, then commits;
+  2. runs Phase 7's `promote_due_records`, then commits — the same daily trigger the future-dated pay switch needs.
+
+  A provider failure is logged, keeps the stored rates, doesn't stop step 2, and exits non-zero so cron / the container restart policy surfaces it.
+  - The job doesn't wait out the API's 24 h throttle (a 00:10 run would otherwise skip because yesterday's fetch landed at 00:10:02). `refresh_exchange_rates` takes a `max_age`; the job passes `MIN_REFETCH_INTERVAL` (1 h), which only stops a crash-looping worker from hammering the provider. `POST /exchange-rates/refresh` keeps the 24 h throttle.
+  - Reads still promote due records themselves (Phase 7), so a late or missed job never shows stale pay; with the job running, that read-time check finds nothing and stays a no-op. Removing it later is a one-line change per read path.
+  - Deployment wiring (cron entry or a worker container) belongs to Phase 15.
+- **Rate dates:** the directory and profile responses already return `rates_as_of` for every currency they convert through (FR-8); Phase 12's analytics must do the same.
+- **Reporting currency:** `reporting_currency` on the directory and profile is validated against `currencies` — an unknown code is `422 unsupported currency: XYZ` (it used to return empty conversions silently). A supported currency with no stored rate (KPW) still returns `null` conversions rather than failing the page. Conversion always goes through stored USD rates (`app.domain.currency`). The UI's selector lists `GET /exchange-rates/latest`.
+- **Done when (verified):** `tests/integration/test_daily_job.py` (12 tests) — with the provider failing (fake transport returning 503), the job reports failure, the profile and directory still convert with the previous stored rates and show those rates' date, and due records are still promoted; a successful fetch is used by the next read; the job doesn't refetch within an hour but does refetch inside the API's 24 h window; worker wake-up times; reporting-currency validation. Also run live: the provider is unreachable from the build sandbox (403), and the job logged the failure, promoted, and exited 1. The analytics endpoints (Phase 12) must get the same provider-failure test when they're built.
+
 
 ## Phase 9 — CSV Import (FR-5)
 - Template download endpoint. Columns: name, email, company, department, title, level, country, hire date, currency, base pay amount — the base-pay type only; other compensation types are added afterward through Phase 7, not at import.

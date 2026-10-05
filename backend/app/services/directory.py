@@ -34,7 +34,7 @@ from app.models import (
     JobLevel,
 )
 from app.services.compensation import promote_due_records
-from app.services.exchange_rates import latest_rates
+from app.services.exchange_rates import latest_rates, require_supported_currency
 
 Sort = Literal["name", "hire_date", "level", "compensation"]
 DEFAULT_LIMIT = 50
@@ -182,6 +182,7 @@ def list_employees(session: Session, query: DirectoryQuery) -> DirectoryPage:
     direction = cursor.direction if cursor else None
     ascending = reads_ascending(query.order, direction)
 
+    reporting = require_supported_currency(session, query.reporting_currency)
     promote_due_records(session)  # future-dated records whose date has arrived
     stmt, keys, parsers = sort_key(query)
     stmt = apply_filters(stmt, query)
@@ -237,7 +238,6 @@ def list_employees(session: Session, query: DirectoryQuery) -> DirectoryPage:
         ).all()
     )
     rates, rate_dates = latest_rates(session)
-    reporting = query.reporting_currency.upper()
 
     def in_reporting(employee: Employee) -> Decimal | None:
         total = totals.get(employee.id)
