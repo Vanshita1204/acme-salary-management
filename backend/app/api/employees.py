@@ -1,14 +1,26 @@
-from fastapi import APIRouter, status
+from typing import Annotated, Literal
+
+from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
 
 from app.api.db_errors import translate_db_errors
 from app.api.deps import DbSession, get_or_404
+from app.domain.pagination import CursorError
 from app.models import CompensationRecord, Employee
 from app.schemas.employees import (
     CompensationRecordIn,
     CompensationRecordOut,
+    DirectoryItem,
+    DirectoryPageOut,
     EmployeeIn,
     EmployeeOut,
+    Status,
+)
+from app.services.directory import (
+    DEFAULT_LIMIT,
+    MAX_LIMIT,
+    DirectoryQuery,
+    list_employees,
 )
 
 router = APIRouter(tags=["employees"])
@@ -25,6 +37,64 @@ def create_employee(body: EmployeeIn, db: DbSession) -> Employee:
         db.commit()
     db.refresh(employee)  # load the DB-generated code and timestamps
     return employee
+
+
+@router.get("/employees", response_model=DirectoryPageOut)
+def list_directory(
+    db: DbSession,
+    q: Annotated[
+        str | None, Query(description="Search name, email or employee code")
+    ] = None,
+    department: Annotated[list[str] | None, Query()] = None,
+    country: Annotated[list[str] | None, Query()] = None,
+    job_title: Annotated[list[str] | None, Query()] = None,
+    job_level: Annotated[list[str] | None, Query()] = None,
+    status_: Annotated[list[Status] | None, Query(alias="status")] = None,
+    sort: Literal["name", "hire_date", "compensation"] = "name",
+    order: Literal["asc", "desc"] = "asc",
+    cursor: Annotated[
+        str | None, Query(description="next_cursor or prev_cursor")
+    ] = None,
+    limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
+    reporting_currency: Annotated[str, Query(min_length=3, max_length=3)] = "USD",
+) -> DirectoryPageOut:
+    """Employee directory (FR-1). Filters combine with AND; repeat a filter for OR
+    within it (`?country=IN&country=US`). Paginate with the returned cursors."""
+    try:
+        page = list_employees(
+            db,
+            DirectoryQuery(
+                q=q,
+                departments=department or [],
+                countries=country or [],
+                job_titles=job_title or [],
+                job_levels=job_level or [],
+                statuses=list(status_ or []),
+                sort=sort,
+                order=order,
+                cursor=cursor,
+                limit=limit,
+                reporting_currency=reporting_currency,
+            ),
+        )
+    except CursorError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
+    return DirectoryPageOut(
+        items=[
+            DirectoryItem(
+                **EmployeeOut.model_validate(row.employee).model_dump(
+                    include=set(DirectoryItem.model_fields)
+                ),
+                total_compensation=row.total,
+                total_compensation_reporting=row.total_reporting,
+            )
+            for row in page.rows
+        ],
+        next_cursor=page.next_cursor,
+        prev_cursor=page.prev_cursor,
+        reporting_currency=page.reporting_currency,
+        rates_as_of=page.rates_as_of,
+    )
 
 
 @router.get("/employees/{employee_id}", response_model=EmployeeOut)

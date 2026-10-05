@@ -1,0 +1,331 @@
+{
+  "environment": {
+    "machine": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "cpu_count": 10,
+    "memory_gb": 16,
+    "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "163848kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-05T07:22:37+00:00"
+  },
+  "database": "acme_lab_s",
+  "employees": 10000,
+  "page_size": 50,
+  "results": {
+    "hire_date": {
+      "offset/first": {
+        "median_ms": 0.46,
+        "min_ms": 0.43,
+        "max_ms": 0.63,
+        "plan": [
+          "Limit  (cost=0.29..6.63 rows=50 width=78) (actual time=0.005..0.032 rows=50 loops=1)",
+          "  Buffers: shared hit=52",
+          "  ->  Index Scan using ix_employees_hire_date on employees  (cost=0.29..1270.28 rows=10000 width=78) (actual time=0.005..0.028 rows=50 loops=1)",
+          "        Buffers: shared hit=52",
+          "Planning Time: 0.030 ms",
+          "Execution Time: 0.043 ms"
+        ]
+      },
+      "keyset/first": {
+        "median_ms": 0.38,
+        "min_ms": 0.37,
+        "max_ms": 0.43,
+        "plan": [
+          "Limit  (cost=0.29..6.63 rows=50 width=78) (actual time=0.005..0.030 rows=50 loops=1)",
+          "  Buffers: shared hit=52",
+          "  ->  Index Scan using ix_employees_hire_date on employees  (cost=0.29..1270.28 rows=10000 width=78) (actual time=0.005..0.026 rows=50 loops=1)",
+          "        Buffers: shared hit=52",
+          "Planning Time: 0.025 ms",
+          "Execution Time: 0.037 ms"
+        ]
+      },
+      "offset/middle": {
+        "median_ms": 1.77,
+        "min_ms": 1.75,
+        "max_ms": 1.83,
+        "plan": [
+          "Limit  (cost=635.28..641.63 rows=50 width=78) (actual time=1.723..1.743 rows=50 loops=1)",
+          "  Buffers: shared hit=5051",
+          "  ->  Index Scan using ix_employees_hire_date on employees  (cost=0.29..1270.28 rows=10000 width=78) (actual time=0.004..1.562 rows=5050 loops=1)",
+          "        Buffers: shared hit=5051",
+          "Planning Time: 0.026 ms",
+          "Execution Time: 1.749 ms"
+        ]
+      },
+      "keyset/middle": {
+        "median_ms": 0.4,
+        "min_ms": 0.38,
+        "max_ms": 0.59,
+        "plan": [
+          "Limit  (cost=0.29..11.34 rows=50 width=78) (actual time=0.008..0.039 rows=50 loops=1)",
+          "  Buffers: shared hit=53",
+          "  ->  Index Scan using ix_employees_hire_date on employees  (cost=0.29..1107.92 rows=5008 width=78) (actual time=0.008..0.034 rows=50 loops=1)",
+          "        Index Cond: (ROW(hire_date, id) > ROW('2022-04-24'::date, '8347'::smallint))",
+          "        Buffers: shared hit=53",
+          "Planning Time: 0.031 ms",
+          "Execution Time: 0.047 ms"
+        ]
+      },
+      "offset/last": {
+        "median_ms": 3.11,
+        "min_ms": 3.05,
+        "max_ms": 3.16,
+        "plan": [
+          "Limit  (cost=1017.26..1017.39 rows=50 width=78) (actual time=6.264..6.270 rows=50 loops=1)",
+          "  Buffers: shared hit=234",
+          "  ->  Sort  (cost=992.39..1017.39 rows=10000 width=78) (actual time=5.461..5.912 rows=10000 loops=1)",
+          "        Sort Key: hire_date, id",
+          "        Sort Method: quicksort  Memory: 1713kB",
+          "        Buffers: shared hit=234",
+          "        ->  Seq Scan on employees  (cost=0.00..328.00 rows=10000 width=78) (actual time=0.002..1.402 rows=10000 loops=1)",
+          "              Buffers: shared hit=228",
+          "Planning Time: 0.028 ms",
+          "Execution Time: 6.321 ms"
+        ]
+      },
+      "keyset/last": {
+        "median_ms": 0.39,
+        "min_ms": 0.33,
+        "max_ms": 0.41,
+        "plan": [
+          "Limit  (cost=128.85..128.97 rows=50 width=78) (actual time=0.053..0.060 rows=50 loops=1)",
+          "  Buffers: shared hit=46",
+          "  ->  Sort  (cost=128.85..128.97 rows=50 width=78) (actual time=0.053..0.055 rows=50 loops=1)",
+          "        Sort Key: hire_date, id",
+          "        Sort Method: quicksort  Memory: 31kB",
+          "        Buffers: shared hit=46",
+          "        ->  Bitmap Heap Scan on employees  (cost=4.67..127.44 rows=50 width=78) (actual time=0.011..0.036 rows=50 loops=1)",
+          "              Recheck Cond: (ROW(hire_date, id) > ROW('2026-08-20'::date, '5890'::smallint))",
+          "              Heap Blocks: exact=44",
+          "              Buffers: shared hit=46",
+          "              ->  Bitmap Index Scan on ix_employees_hire_date  (cost=0.00..4.66 rows=50 width=0) (actual time=0.004..0.004 rows=50 loops=1)",
+          "                    Index Cond: (ROW(hire_date, id) > ROW('2026-08-20'::date, '5890'::smallint))",
+          "                    Buffers: shared hit=2",
+          "Planning:",
+          "  Buffers: shared hit=3",
+          "Planning Time: 0.043 ms",
+          "Execution Time: 0.069 ms"
+        ]
+      }
+    },
+    "name": {
+      "offset/first": {
+        "median_ms": 0.46,
+        "min_ms": 0.43,
+        "max_ms": 0.62,
+        "plan": [
+          "Limit  (cost=0.72..8.60 rows=50 width=142) (actual time=0.050..0.075 rows=50 loops=1)",
+          "  Buffers: shared hit=53",
+          "  ->  Incremental Sort  (cost=0.72..1575.54 rows=10000 width=142) (actual time=0.050..0.071 rows=50 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Presorted Key: (lower(last_name)), (lower(first_name))",
+          "        Full-sort Groups: 2  Sort Method: quicksort  Average Memory: 29kB  Peak Memory: 29kB",
+          "        Buffers: shared hit=53",
+          "        ->  Index Scan using ix_employees_name_search on employees  (cost=0.29..1304.27 rows=10000 width=142) (actual time=0.006..0.046 rows=51 loops=1)",
+          "              Buffers: shared hit=53",
+          "Planning Time: 0.030 ms",
+          "Execution Time: 0.087 ms"
+        ]
+      },
+      "keyset/first": {
+        "median_ms": 0.41,
+        "min_ms": 0.4,
+        "max_ms": 0.46,
+        "plan": [
+          "Limit  (cost=0.72..8.60 rows=50 width=142) (actual time=0.053..0.082 rows=50 loops=1)",
+          "  Buffers: shared hit=53",
+          "  ->  Incremental Sort  (cost=0.72..1575.54 rows=10000 width=142) (actual time=0.053..0.079 rows=50 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Presorted Key: (lower(last_name)), (lower(first_name))",
+          "        Full-sort Groups: 2  Sort Method: quicksort  Average Memory: 29kB  Peak Memory: 29kB",
+          "        Buffers: shared hit=53",
+          "        ->  Index Scan using ix_employees_name_search on employees  (cost=0.29..1304.27 rows=10000 width=142) (actual time=0.005..0.051 rows=51 loops=1)",
+          "              Buffers: shared hit=53",
+          "Planning Time: 0.030 ms",
+          "Execution Time: 0.095 ms"
+        ]
+      },
+      "offset/middle": {
+        "median_ms": 5.43,
+        "min_ms": 5.32,
+        "max_ms": 5.58,
+        "plan": [
+          "Limit  (cost=788.13..796.00 rows=50 width=142) (actual time=5.720..5.764 rows=50 loops=1)",
+          "  Buffers: shared hit=5046",
+          "  ->  Incremental Sort  (cost=0.72..1575.54 rows=10000 width=142) (actual time=0.049..5.584 rows=5050 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Presorted Key: (lower(last_name)), (lower(first_name))",
+          "        Full-sort Groups: 158  Sort Method: quicksort  Average Memory: 29kB  Peak Memory: 29kB",
+          "        Buffers: shared hit=5046",
+          "        ->  Index Scan using ix_employees_name_search on employees  (cost=0.29..1304.27 rows=10000 width=142) (actual time=0.005..3.296 rows=5051 loops=1)",
+          "              Buffers: shared hit=5046",
+          "Planning Time: 0.045 ms",
+          "Execution Time: 5.777 ms"
+        ]
+      },
+      "keyset/middle": {
+        "median_ms": 0.51,
+        "min_ms": 0.48,
+        "max_ms": 0.66,
+        "plan": [
+          "Limit  (cost=0.72..14.02 rows=50 width=142) (actual time=0.062..0.093 rows=50 loops=1)",
+          "  Buffers: shared hit=54",
+          "  ->  Incremental Sort  (cost=0.72..1337.18 rows=5024 width=142) (actual time=0.062..0.090 rows=50 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Presorted Key: (lower(last_name)), (lower(first_name))",
+          "        Full-sort Groups: 2  Sort Method: quicksort  Average Memory: 29kB  Peak Memory: 29kB",
+          "        Buffers: shared hit=54",
+          "        ->  Index Scan using ix_employees_name_search on employees  (cost=0.29..1188.20 rows=5024 width=142) (actual time=0.014..0.065 rows=51 loops=1)",
+          "              Index Cond: (ROW(lower(last_name), lower(first_name)) >= ROW('lawson'::text, 'timothy'::text))",
+          "              Filter: (ROW(lower(last_name), lower(first_name), id) > ROW('lawson'::text, 'timothy'::text, '6822'::smallint))",
+          "              Rows Removed by Filter: 1",
+          "              Buffers: shared hit=54",
+          "Planning Time: 0.059 ms",
+          "Execution Time: 0.106 ms"
+        ]
+      },
+      "offset/last": {
+        "median_ms": 10.25,
+        "min_ms": 10.21,
+        "max_ms": 10.43,
+        "plan": [
+          "Limit  (cost=1067.26..1067.39 rows=50 width=142) (actual time=21.111..21.118 rows=50 loops=1)",
+          "  Buffers: shared hit=228",
+          "  ->  Sort  (cost=1042.39..1067.39 rows=10000 width=142) (actual time=20.315..20.764 rows=10000 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Sort Method: quicksort  Memory: 1728kB",
+          "        Buffers: shared hit=228",
+          "        ->  Seq Scan on employees  (cost=0.00..378.00 rows=10000 width=142) (actual time=0.004..4.772 rows=10000 loops=1)",
+          "              Buffers: shared hit=228",
+          "Planning Time: 0.043 ms",
+          "Execution Time: 21.184 ms"
+        ]
+      },
+      "keyset/last": {
+        "median_ms": 0.49,
+        "min_ms": 0.41,
+        "max_ms": 0.51,
+        "plan": [
+          "Limit  (cost=32.14..32.15 rows=6 width=142) (actual time=0.101..0.105 rows=50 loops=1)",
+          "  Buffers: shared hit=46",
+          "  ->  Sort  (cost=32.14..32.15 rows=6 width=142) (actual time=0.100..0.103 rows=50 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Sort Method: quicksort  Memory: 31kB",
+          "        Buffers: shared hit=46",
+          "        ->  Bitmap Heap Scan on employees  (cost=4.35..32.06 rows=6 width=142) (actual time=0.010..0.065 rows=50 loops=1)",
+          "              Filter: (ROW(lower(last_name), lower(first_name), id) > ROW('zachariah'::text, 'falak'::text, '6235'::smallint))",
+          "              Rows Removed by Filter: 1",
+          "              Heap Blocks: exact=44",
+          "              Buffers: shared hit=46",
+          "              ->  Bitmap Index Scan on ix_employees_name_search  (cost=0.00..4.34 rows=8 width=0) (actual time=0.007..0.007 rows=51 loops=1)",
+          "                    Index Cond: (ROW(lower(last_name), lower(first_name)) >= ROW('zachariah'::text, 'falak'::text))",
+          "                    Buffers: shared hit=2",
+          "Planning:",
+          "  Buffers: shared hit=6",
+          "Planning Time: 0.062 ms",
+          "Execution Time: 0.120 ms"
+        ]
+      }
+    },
+    "name+id_index": {
+      "offset/first": {
+        "median_ms": 0.35,
+        "min_ms": 0.35,
+        "max_ms": 0.39,
+        "plan": [
+          "Limit  (cost=0.29..6.92 rows=50 width=142) (actual time=0.005..0.045 rows=50 loops=1)",
+          "  Buffers: shared hit=52",
+          "  ->  Index Scan using lab_ix_employees_name_id on employees  (cost=0.29..1328.27 rows=10000 width=142) (actual time=0.005..0.041 rows=50 loops=1)",
+          "        Buffers: shared hit=52",
+          "Planning Time: 0.033 ms",
+          "Execution Time: 0.052 ms"
+        ]
+      },
+      "keyset/first": {
+        "median_ms": 0.33,
+        "min_ms": 0.3,
+        "max_ms": 0.36,
+        "plan": [
+          "Limit  (cost=0.29..6.92 rows=50 width=142) (actual time=0.005..0.046 rows=50 loops=1)",
+          "  Buffers: shared hit=52",
+          "  ->  Index Scan using lab_ix_employees_name_id on employees  (cost=0.29..1328.27 rows=10000 width=142) (actual time=0.005..0.042 rows=50 loops=1)",
+          "        Buffers: shared hit=52",
+          "Planning Time: 0.043 ms",
+          "Execution Time: 0.054 ms"
+        ]
+      },
+      "offset/middle": {
+        "median_ms": 3.38,
+        "min_ms": 3.35,
+        "max_ms": 3.45,
+        "plan": [
+          "Limit  (cost=664.28..670.92 rows=50 width=142) (actual time=3.296..3.330 rows=50 loops=1)",
+          "  Buffers: shared hit=5048",
+          "  ->  Index Scan using lab_ix_employees_name_id on employees  (cost=0.29..1328.27 rows=10000 width=142) (actual time=0.004..3.143 rows=5050 loops=1)",
+          "        Buffers: shared hit=5048",
+          "Planning Time: 0.036 ms",
+          "Execution Time: 3.337 ms"
+        ]
+      },
+      "keyset/middle": {
+        "median_ms": 0.35,
+        "min_ms": 0.34,
+        "max_ms": 0.35,
+        "plan": [
+          "Limit  (cost=0.29..11.60 rows=50 width=142) (actual time=0.012..0.053 rows=50 loops=1)",
+          "  Buffers: shared hit=52",
+          "  ->  Index Scan using lab_ix_employees_name_id on employees  (cost=0.29..1137.31 rows=5024 width=142) (actual time=0.011..0.049 rows=50 loops=1)",
+          "        Index Cond: (ROW(lower(last_name), lower(first_name), id) > ROW('lawson'::text, 'timothy'::text, '6822'::smallint))",
+          "        Buffers: shared hit=52",
+          "Planning Time: 0.075 ms",
+          "Execution Time: 0.062 ms"
+        ]
+      },
+      "offset/last": {
+        "median_ms": 6.85,
+        "min_ms": 6.61,
+        "max_ms": 7.06,
+        "plan": [
+          "Limit  (cost=1067.26..1067.39 rows=50 width=142) (actual time=21.094..21.101 rows=50 loops=1)",
+          "  Buffers: shared hit=228",
+          "  ->  Sort  (cost=1042.39..1067.39 rows=10000 width=142) (actual time=20.207..20.746 rows=10000 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Sort Method: quicksort  Memory: 1728kB",
+          "        Buffers: shared hit=228",
+          "        ->  Seq Scan on employees  (cost=0.00..378.00 rows=10000 width=142) (actual time=0.006..4.789 rows=10000 loops=1)",
+          "              Buffers: shared hit=228",
+          "Planning Time: 0.056 ms",
+          "Execution Time: 21.116 ms"
+        ]
+      },
+      "keyset/last": {
+        "median_ms": 0.36,
+        "min_ms": 0.34,
+        "max_ms": 0.37,
+        "plan": [
+          "Limit  (cost=25.65..25.67 rows=6 width=142) (actual time=0.105..0.111 rows=50 loops=1)",
+          "  Buffers: shared hit=46",
+          "  ->  Sort  (cost=25.65..25.67 rows=6 width=142) (actual time=0.104..0.107 rows=50 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Sort Method: quicksort  Memory: 31kB",
+          "        Buffers: shared hit=46",
+          "        ->  Bitmap Heap Scan on employees  (cost=4.33..25.58 rows=6 width=142) (actual time=0.018..0.060 rows=50 loops=1)",
+          "              Recheck Cond: (ROW(lower(last_name), lower(first_name), id) > ROW('zachariah'::text, 'falak'::text, '6235'::smallint))",
+          "              Heap Blocks: exact=43",
+          "              Buffers: shared hit=46",
+          "              ->  Bitmap Index Scan on lab_ix_employees_name_id  (cost=0.00..4.33 rows=6 width=0) (actual time=0.010..0.010 rows=50 loops=1)",
+          "                    Index Cond: (ROW(lower(last_name), lower(first_name), id) > ROW('zachariah'::text, 'falak'::text, '6235'::smallint))",
+          "                    Buffers: shared hit=3",
+          "Planning:",
+          "  Buffers: shared hit=6",
+          "Planning Time: 0.098 ms",
+          "Execution Time: 0.135 ms"
+        ]
+      }
+    }
+  }
+}

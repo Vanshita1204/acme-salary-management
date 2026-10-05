@@ -13,28 +13,29 @@ import argparse
 import random
 import time
 import unicodedata
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
 from faker import Faker
-from sqlalchemy import func, insert, select, text
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
 from app.models import (
     ChangeReason,
     Company,
-    CompensationRecord,
     CompensationType,
     Country,
     Employee,
 )
+from app.seed.loaders import EMPLOYEE_LOADERS, METHODS, RECORD_LOADERS, Method
 
 DEFAULT_COUNT = 10_000
 DEFAULT_SEED = 1204
-BATCH_SIZE = 5_000
+BATCH_SIZE = 5_000  # employees per chunk
+DEFAULT_METHOD: "Method" = "copy"  # fastest in Scale Lab E1 (docs/PERFORMANCE.md)
 EARLIEST_HIRE = date(2012, 1, 1)
 REVIEW_MONTH_DAY = (4, 1)  # annual revisions take effect on 1 April
 BONUS_MONTH_DAY = (3, 15)  # annual bonus paid on 15 March
@@ -428,11 +429,6 @@ class Generator:
         return records
 
 
-def batches[T](items: list[T], size: int) -> Iterator[list[T]]:
-    for start in range(0, len(items), size):
-        yield items[start : start + size]
-
-
 def seed_employees(
     session: Session,
     count: int = DEFAULT_COUNT,
@@ -440,10 +436,16 @@ def seed_employees(
     as_of: date | None = None,
     batch_size: int = BATCH_SIZE,
     *,
+    method: Method = DEFAULT_METHOD,
     require_empty: bool = True,
     email_domain: str = EMAIL_DOMAIN,
+    progress: Callable[[int], None] | None = None,
 ) -> dict[str, int]:
     """Generate and insert `count` employees with histories; returns row counts.
+
+    Works in chunks of `batch_size` employees — generate, insert employees, insert their
+    records, fill their current compensation, commit — so memory stays flat at any
+    count. `method` picks how rows are written (see `app.seed.loaders`).
 
     `require_empty=False` and a distinct `email_domain` let tests seed a small batch
     inside a rolled-back transaction on a database that already has employees.
@@ -457,25 +459,36 @@ def seed_employees(
         )
     catalog = load_catalog(session)
     generator = Generator(catalog, seed, as_of, email_domain)
+    insert_employees, insert_records = EMPLOYEE_LOADERS[method], RECORD_LOADERS[method]
 
-    people = [generator.employee(i) for i in range(1, count + 1)]
-    employee_ids: list[int] = []
-    for batch in batches([row for row, _ in people], batch_size):
-        employee_ids += session.scalars(
-            insert(Employee).returning(Employee.id, sort_by_parameter_order=True), batch
-        ).all()
+    totals = {"employees": 0, "records": 0, "current": 0}
+    for start in range(1, count + 1, batch_size):
+        people = [
+            generator.employee(i)
+            for i in range(start, min(start + batch_size, count + 1))
+        ]
+        employee_ids = insert_employees(session, [row for row, _ in people])
+        records = [
+            record
+            for employee_id, (_, facts) in zip(employee_ids, people, strict=True)
+            for record in generator.history(employee_id, facts)
+        ]
+        insert_records(session, records)
+        totals["current"] += fill_current_compensation(session, employee_ids, as_of)
+        totals["employees"] += len(employee_ids)
+        totals["records"] += len(records)
+        session.commit()
+        session.expunge_all()  # keep the ORM loader's identity map from growing
+        if progress:
+            progress(totals["employees"])
+    return totals
 
-    records = [
-        record
-        for employee_id, (_, facts) in zip(employee_ids, people, strict=True)
-        for record in generator.history(employee_id, facts)
-    ]
-    for batch in batches(records, batch_size):
-        session.execute(insert(CompensationRecord), batch)
 
-    # Current compensation: the latest record per (employee, type) that's in effect,
-    # for the employees inserted by this run only.
-    session.execute(
+def fill_current_compensation(
+    session: Session, employee_ids: list[int], as_of: date
+) -> int:
+    """Latest in-effect record per (employee, type), for the given employees."""
+    result = session.execute(
         text(
             """
             INSERT INTO current_compensation
@@ -489,11 +502,7 @@ def seed_employees(
         ),
         {"as_of": as_of, "employee_ids": employee_ids},
     )
-    current = session.scalar(
-        text("SELECT count(*) FROM current_compensation WHERE employee_id = ANY(:ids)"),
-        {"ids": employee_ids},
-    )
-    return {"employees": len(employee_ids), "records": len(records), "current": current}
+    return result.rowcount
 
 
 def main() -> None:
@@ -507,17 +516,33 @@ def main() -> None:
         help="history runs up to this date (default: today)",
     )
     parser.add_argument("--batch-size", type=int, default=BATCH_SIZE)
+    parser.add_argument("--method", choices=METHODS, default=DEFAULT_METHOD)
     args = parser.parse_args()
 
     started = time.perf_counter()
-    with SessionLocal() as session, session.begin():
+
+    def report(done: int) -> None:
+        if done % 100_000 == 0 or done == args.count:
+            print(
+                f"  {done:>10,} employees  {time.perf_counter() - started:7.1f}s",
+                flush=True,
+            )
+
+    with SessionLocal() as session:
         counts = seed_employees(
-            session, args.count, args.seed, args.as_of, args.batch_size
+            session,
+            args.count,
+            args.seed,
+            args.as_of,
+            args.batch_size,
+            method=args.method,
+            progress=report,
         )
     elapsed = time.perf_counter() - started
     print(
         f"Seeded {counts['employees']} employees, {counts['records']} compensation "
-        f"records, {counts['current']} current-compensation rows in {elapsed:.1f}s."
+        f"records, {counts['current']} current-compensation rows in {elapsed:.1f}s "
+        f"({args.method})."
     )
 
 

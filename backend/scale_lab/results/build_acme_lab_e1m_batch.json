@@ -1,0 +1,33 @@
+{
+  "environment": {
+    "machine": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "cpu_count": 10,
+    "memory_gb": 16,
+    "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "163848kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-05T08:47:15+00:00"
+  },
+  "database": "acme_lab_e1m",
+  "count": 1000000,
+  "method": "batch",
+  "seed_seconds": 1620.4,
+  "sizes": {
+    "employees": {
+      "rows": 1000000,
+      "size": "413 MB"
+    },
+    "compensation_records": {
+      "rows": 17763821,
+      "size": "2918 MB"
+    },
+    "current_compensation": {
+      "rows": 4341442,
+      "size": "567 MB"
+    }
+  }
+}

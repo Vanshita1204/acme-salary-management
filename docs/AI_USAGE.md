@@ -146,11 +146,43 @@ Instructions given to the coding agent are committed in _[e.g. `CLAUDE.md`]_.
 - **Formatter noise:** running `ruff format` reflowed committed model files that had been written at a wider line length. The AI reverted the formatting and kept only real changes.
 - **Stray folder:** a nested, empty `acme-salary-management/` with two empty git repos, left by a setup command run from inside the project.
 
-**24. Verification habits that paid off**
+**24. Verification habits that paid off (Phases 1–1.3)**
 - Every migration change was checked with `alembic check` (no drift between models and schema) and a full `downgrade base` → `upgrade head` round-trip.
 - The change-reason merge migration (later folded away) was proven on a throwaway database with a real record before relying on it, because it temporarily bypassed the append-only trigger.
 - Integration tests run inside a rolled-back transaction and use ISO's reserved test codes (`XTS`, `XA`), so they never pollute or depend on the dev database.
 - A unit test parses every `app/domain/` module and fails on any database, HTTP or API import, enforcing the "pure functions" rule mechanically.
+
+**25. Domain layer: two spec gaps resolved explicitly**
+- **AI output:** While writing the Phase 2 pure functions, the agent hit two places the requirements didn't settle and flagged both instead of guessing silently.
+- **CSV template:** FR-5 listed a single "name" column, but the employee model stores first and last name separately. The template uses `first_name` / `last_name`, and `REQUIREMENTS.md` was updated to match.
+- **Average increase across a currency change:** excluded, alongside corrections. Comparing totals in two currencies isn't meaningful, and FR-7 already defers cross-currency increases.
+- **Enforced mechanically:** a unit test parses every `app/domain/` module and fails on any database, HTTP or API import.
+
+**26. Seed realism checked against the data, including a false alarm**
+- **AI output:** After generating 10,000 employees, the agent queried medians per country and currency instead of trusting the generator. Singapore employees paid in USD showed the same median as those paid in SGD, which looked like a missing conversion.
+- **Verification:** breaking it down by level and department showed USD pay consistently ~0.74× SGD, as intended. The medians matched only because those 21 people had a different level mix. No change made.
+- **Lesson:** an aggregate that looks wrong needs a finer cut before it's called a bug — and before it's called fine.
+
+**27. Scale Lab: the seed had to change before it could be measured**
+- **AI output:** The seed built every employee and record in memory before inserting. At 1M employees that would be ~18M record dicts, many gigabytes. The agent rewrote it to stream in 5,000-employee chunks, committing each, and made the insert method selectable so E1 could compare row-by-row, ORM, batched `INSERT` and `COPY` on identical data. A checksum confirmed the methods wrote the same rows.
+- **Decision:** `COPY` became the seed default (1.7× batched `INSERT`, 7.9× row-by-row).
+
+**28. A real bug only volume could find: employee codes collided at hire #1,000,000**
+- **What happened:** The first 1M load crashed: `duplicate key value violates unique constraint "employees_code_key" — Key (code)=(EMP-100000)`.
+- **Cause:** codes were generated with `lpad(n, 6, '0')`, and Postgres's `lpad` *truncates* longer strings — `lpad('1000000', 6, '0')` is `100000`. The production app would have failed on its millionth hire. No test at 10k could have shown it.
+- **Fix:** an `employee_code()` function that pads to at least 6 digits and never truncates, folded into migration `0006` (fresh database), plus a boundary test (42, 999,999, 1,000,000, 12,345,678).
+- **Lesson:** this is the case for running the lab at all — the most valuable result wasn't a timing.
+
+**29. Recording a limit, and softening an unmeasured claim**
+- **AI output:** E3 confirmed the `current_compensation` table (3–4× faster for whole-population queries) and that the composite history index is essential (a page goes from 1.8 ms to 2.9 s without it at 1M). It also found that, even with the table, sorting by compensation and country aggregates take 2.9–4.2 s at 1M.
+- **Decision:** recorded as a limit, not hidden. It's fine at the deployed 10k (22–61 ms); scaling past that needs an indexed per-employee totals table or materialized analytics (E5).
+- **Correction:** the first draft of `PERFORMANCE.md` explained `COPY`'s smaller-than-expected lead as the per-row validation trigger's cost. That wasn't measured, so it was reworded as the likely reason, with the actual test left to E7.
+
+**30. Starting Phase 5 before Phase 4 finished**
+- **Prompt:** "next phase" while the 1M experiments were still running.
+- **Decision:** Phase 5 (directory API) depends on Phase 4's pagination and current-compensation conclusions. The 10k results already pointed the same way as the original design, so the agent built Phase 5 on that and said it would revisit if 1M disagreed. 1M confirmed both (keyset < 1 ms vs `OFFSET` 2.6 s).
+- **Design call surfaced:** "sort by compensation" across employees paid in different currencies can't compare raw totals. The sort compares USD-equivalent totals at the latest stored rates, in SQL, which gives the same order for every reporting currency.
+- **Bug caught in review:** a cursor that decoded but held an unparseable value would have returned a 500. Fixed to a 400, with tests for tampered and mismatched cursors. The directory met its acceptance target: p95 42 ms at 10k (target < 500 ms).
 
 ---
 

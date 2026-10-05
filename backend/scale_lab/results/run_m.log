@@ -1,0 +1,33 @@
+[13:09:51] acme_lab_m: schema + reference data: 4.6s
+[13:26:31] acme_lab_m: seeded 1,000,000 employees with copy in 1000.6s
+[13:26:33] acme_lab_m: ANALYZE: 2.2s
+[13:26:34] acme_lab_m: {'employees': {'rows': 1000000, 'size': '413 MB'}, 'compensation_records': {'rows': 17763655, 'size': '2918 MB'}, 'current_compensation': {'rows': 4341442, 'size': '567 MB'}}
+[13:26:34] E2 hire_date        first  offset     0.48 ms | keyset     0.41 ms
+[13:26:41] E2 hire_date        middle offset   864.49 ms | keyset      0.7 ms
+[13:26:53] E2 hire_date        last   offset  1640.58 ms | keyset     0.61 ms
+[13:26:53] E2 name             first  offset     0.49 ms | keyset     0.47 ms
+[13:27:03] E2 name             middle offset   1325.3 ms | keyset     0.96 ms
+[13:27:24] E2 name             last   offset  2603.44 ms | keyset     0.59 ms
+[13:27:26] E2 name (+id index) first  offset     0.55 ms | keyset     0.51 ms
+[13:27:35] E2 name (+id index) middle offset  1027.04 ms | keyset     0.51 ms
+[13:27:51] E2 name (+id index) last   offset  1985.61 ms | keyset     0.48 ms
+[13:27:51] E3 [index   ] page      distinct_on       1.79 ms
+[13:27:51] E3 [index   ] page      row_number        1.72 ms
+[13:27:51] E3 [index   ] page      table             1.76 ms
+[13:30:08] E3 [index   ] aggregate distinct_on   18764.38 ms
+[13:32:04] E3 [index   ] aggregate row_number    16182.05 ms
+[13:32:34] E3 [index   ] aggregate table          4165.25 ms
+[13:33:45] E3 [index   ] top       distinct_on    9228.76 ms
+[13:35:07] E3 [index   ] top       row_number     10700.0 ms
+[13:35:29] E3 [index   ] top       table           2890.1 ms
+[13:35:52] E3 [no index] page      distinct_on    2934.68 ms
+[13:36:10] E3 [no index] page      row_number     2496.93 ms
+[13:38:13] E3 [no index] aggregate distinct_on    16734.1 ms
+[13:39:57] E3 [no index] aggregate row_number    14357.71 ms
+[13:40:59] E3 [no index] top       distinct_on    7829.35 ms
+[13:42:15] E3 [no index] top       row_number    10378.92 ms
+[13:42:29] acme_lab_e1m: schema + reference data: 4.2s
+[14:17:12] acme_lab_e1m: seeded 1,000,000 employees with batch in 1620.4s
+[14:17:15] acme_lab_e1m: ANALYZE: 2.9s
+[14:17:15] acme_lab_e1m: {'employees': {'rows': 1000000, 'size': '413 MB'}, 'compensation_records': {'rows': 17763821, 'size': '2918 MB'}, 'current_compensation': {'rows': 4341442, 'size': '567 MB'}}
+LAB-DONE

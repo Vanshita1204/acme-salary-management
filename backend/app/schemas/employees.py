@@ -77,3 +77,28 @@ class CompensationRecordOut(ORMModel):
     note: str | None
     changed_by: str
     created_at: datetime
+
+
+class DirectoryItem(BaseModel):
+    id: int
+    code: str
+    first_name: str
+    last_name: str
+    email: str
+    department: str
+    job_title: str
+    job_level: str
+    current_country: str
+    status: Status
+    hire_date: date
+    currency: str
+    total_compensation: Decimal | None  # annual CTC, employee's currency
+    total_compensation_reporting: Decimal | None  # annual CTC, reporting currency
+
+
+class DirectoryPageOut(BaseModel):
+    items: list[DirectoryItem]
+    next_cursor: str | None
+    prev_cursor: str | None
+    reporting_currency: str
+    rates_as_of: dict[str, date]

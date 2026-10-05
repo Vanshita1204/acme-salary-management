@@ -22,6 +22,15 @@ def upgrade() -> None:
     op.execute("CREATE EXTENSION IF NOT EXISTS citext")
     # Backs system-generated employee codes ('EMP-000042'); never client-supplied.
     op.execute("CREATE SEQUENCE employee_code_seq")
+    # 'EMP-000042': zero-padded to at least 6 digits, never truncated. (lpad alone cuts
+    # longer strings, so employee 1,000,000 would collide with EMP-100000.)
+    op.execute(
+        """
+        CREATE FUNCTION employee_code(n bigint) RETURNS text
+        LANGUAGE sql IMMUTABLE STRICT
+        RETURN 'EMP-' || lpad(n::text, greatest(6, length(n::text)), '0')
+        """
+    )
     op.create_table(
         "employees",
         sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
@@ -30,7 +39,7 @@ def upgrade() -> None:
             sa.String(12),
             nullable=False,
             unique=True,
-            server_default=sa.text("'EMP-' || lpad(nextval('employee_code_seq')::text, 6, '0')"),
+            server_default=sa.text("employee_code(nextval('employee_code_seq'))"),
         ),
         sa.Column("company_id", sa.BigInteger(), sa.ForeignKey("companies.id"), nullable=False),
         sa.Column("first_name", sa.Text(), nullable=False),
@@ -82,4 +91,5 @@ def upgrade() -> None:
 
 def downgrade() -> None:
     op.drop_table("employees")  # also drops employee_code_seq (OWNED BY)
+    op.execute("DROP FUNCTION employee_code(bigint)")
     # citext extension is left installed; other objects may depend on it.

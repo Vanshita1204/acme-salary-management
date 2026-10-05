@@ -1,0 +1,138 @@
+{
+  "environment": {
+    "machine": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "cpu_count": 10,
+    "memory_gb": 16,
+    "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "163848kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-05T07:59:01+00:00"
+  },
+  "overall_p95_ms": 42.1,
+  "requests": 300,
+  "queries": [
+    {
+      "params": {},
+      "median_ms": 6.8,
+      "p95_ms": 8.4
+    },
+    {
+      "params": {
+        "sort": "hire_date",
+        "order": "desc"
+      },
+      "median_ms": 6.3,
+      "p95_ms": 6.9
+    },
+    {
+      "params": {
+        "sort": "compensation",
+        "order": "desc"
+      },
+      "median_ms": 41.4,
+      "p95_ms": 47.5
+    },
+    {
+      "params": {
+        "sort": "compensation",
+        "order": "asc",
+        "reporting_currency": "INR"
+      },
+      "median_ms": 41.7,
+      "p95_ms": 44.3
+    },
+    {
+      "params": {
+        "department": "Engineering"
+      },
+      "median_ms": 7.2,
+      "p95_ms": 9.4
+    },
+    {
+      "params": {
+        "country": "IN",
+        "status": "active"
+      },
+      "median_ms": 6.8,
+      "p95_ms": 7.9
+    },
+    {
+      "params": {
+        "country": [
+          "US",
+          "GB"
+        ],
+        "job_level": "L4",
+        "sort": "hire_date"
+      },
+      "median_ms": 6.8,
+      "p95_ms": 9.9
+    },
+    {
+      "params": {
+        "department": "Sales",
+        "sort": "compensation",
+        "order": "desc"
+      },
+      "median_ms": 31.8,
+      "p95_ms": 35.5
+    },
+    {
+      "params": {
+        "job_title": "Software Engineer",
+        "country": "DE"
+      },
+      "median_ms": 6.2,
+      "p95_ms": 9.2
+    },
+    {
+      "params": {
+        "q": "an"
+      },
+      "median_ms": 7.4,
+      "p95_ms": 10.3
+    },
+    {
+      "params": {
+        "q": "kumar",
+        "country": "IN"
+      },
+      "median_ms": 11.5,
+      "p95_ms": 12.3
+    },
+    {
+      "params": {
+        "q": "EMP-0012"
+      },
+      "median_ms": 27.1,
+      "p95_ms": 33.1
+    },
+    {
+      "params": {
+        "q": "zzzz-no-match"
+      },
+      "median_ms": 28.3,
+      "p95_ms": 32.6
+    },
+    {
+      "params": {
+        "status": "terminated",
+        "sort": "hire_date",
+        "order": "desc"
+      },
+      "median_ms": 7.2,
+      "p95_ms": 10.5
+    },
+    {
+      "params": {
+        "limit": 200
+      },
+      "median_ms": 12.8,
+      "p95_ms": 14.2
+    }
+  ]
+}

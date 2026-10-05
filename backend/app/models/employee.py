@@ -37,7 +37,7 @@ class Employee(Base):
         String(12),
         nullable=False,
         unique=True,
-        server_default=text("'EMP-' || lpad(nextval('employee_code_seq')::text, 6, '0')"),
+        server_default=text("employee_code(nextval('employee_code_seq'))"),  # see 0006
     )
     company_id: Mapped[int] = mapped_column(
         BigInteger, ForeignKey("companies.id"), nullable=False

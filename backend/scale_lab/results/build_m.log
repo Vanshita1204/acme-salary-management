@@ -1,0 +1,59 @@
+[12:51:52] acme_lab_m: schema + reference data: 3.4s
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/vanshita/Documents/Projects/Python/acme-salary-management/backend/scale_lab/build.py", line 38, in <module>
+    "method": args.method,
+    
+  File "/Users/vanshita/Documents/Projects/Python/acme-salary-management/backend/scale_lab/build.py", line 24, in main
+    f"{database}: schema + reference data", lambda: lab.prepare_reference(database)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/vanshita/Documents/Projects/Python/acme-salary-management/backend/scale_lab/lab.py", line 79, in seed
+    
+    
+    ...<2 lines>...
+        started = time.perf_counter()
+        ^
+  File "/Users/vanshita/Documents/Projects/Python/acme-salary-management/backend/scale_lab/lab.py", line 60, in run_app
+    )
+    
+RuntimeError: /Users/vanshita/Documents/Projects/Python/acme-salary-management/backend/.venv/bin/python -m app.seed.employees --count 1000000 --as-of 2026-10-01 --method copy failed:
+     100,000 employees     90.1s
+     200,000 employees    184.8s
+     300,000 employees    278.3s
+     400,000 employees    372.7s
+     500,000 employees    477.0s
+     600,000 employees    583.5s
+     700,000 employees    688.9s
+     800,000 employees    793.8s
+     900,000 employees    899.6s
+
+Traceback (most recent call last):
+  File "<frozen runpy>", line 198, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/Users/vanshita/Documents/Projects/Python/acme-salary-management/backend/app/seed/employees.py", line 550, in <module>
+    main()
+    ~~~~^^
+  File "/Users/vanshita/Documents/Projects/Python/acme-salary-management/backend/app/seed/employees.py", line 532, in main
+    counts = seed_employees(
+        session,
+    ...<5 lines>...
+        progress=report,
+    )
+  File "/Users/vanshita/Documents/Projects/Python/acme-salary-management/backend/app/seed/employees.py", line 470, in seed_employees
+    employee_ids = insert_employees(session, [row for row, _ in people])
+  File "/Users/vanshita/Documents/Projects/Python/acme-salary-management/backend/app/seed/loaders.py", line 100, in employees_copy
+    _copy(session, "employees", EMPLOYEE_COLUMNS, rows)
+    ~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/vanshita/Documents/Projects/Python/acme-salary-management/backend/app/seed/loaders.py", line 93, in _copy
+    cursor.copy(f"COPY {table} ({', '.join(columns)}) FROM STDIN") as copy,
+    ~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.13/3.13.7/Frameworks/Python.framework/Versions/3.13/lib/python3.13/contextlib.py", line 148, in __exit__
+    next(self.gen)
+    ~~~~^^^^^^^^^^
+  File "/Users/vanshita/Documents/Projects/Python/acme-salary-management/backend/.venv/lib/python3.13/site-packages/psycopg/cursor.py", line 330, in copy
+    raise ex.with_traceback(None)
+psycopg.errors.UniqueViolation: duplicate key value violates unique constraint "employees_code_key"
+DETAIL:  Key (code)=(EMP-100000) already exists.
+CONTEXT:  COPY employees, line 5000
+

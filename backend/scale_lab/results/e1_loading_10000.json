@@ -1,0 +1,103 @@
+{
+  "environment": {
+    "machine": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "cpu_count": 10,
+    "memory_gb": 16,
+    "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "163848kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-05T07:21:01+00:00"
+  },
+  "count": 10000,
+  "identical_data": true,
+  "methods": {
+    "row": {
+      "seconds": 71.5,
+      "employees": 10000,
+      "records": 178527,
+      "rows_per_second": 2635,
+      "checksum": "24ec6fb14f38a38b9d91ab0faf58a2ab",
+      "sizes": {
+        "employees": {
+          "rows": 10000,
+          "size": "4480 kB"
+        },
+        "compensation_records": {
+          "rows": 178527,
+          "size": "29 MB"
+        },
+        "current_compensation": {
+          "rows": 43493,
+          "size": "5920 kB"
+        }
+      }
+    },
+    "orm": {
+      "seconds": 26.2,
+      "employees": 10000,
+      "records": 178527,
+      "rows_per_second": 7195,
+      "checksum": "24ec6fb14f38a38b9d91ab0faf58a2ab",
+      "sizes": {
+        "employees": {
+          "rows": 10000,
+          "size": "4480 kB"
+        },
+        "compensation_records": {
+          "rows": 178527,
+          "size": "29 MB"
+        },
+        "current_compensation": {
+          "rows": 43493,
+          "size": "5920 kB"
+        }
+      }
+    },
+    "batch": {
+      "seconds": 15.1,
+      "employees": 10000,
+      "records": 178527,
+      "rows_per_second": 12500,
+      "checksum": "24ec6fb14f38a38b9d91ab0faf58a2ab",
+      "sizes": {
+        "employees": {
+          "rows": 10000,
+          "size": "4488 kB"
+        },
+        "compensation_records": {
+          "rows": 178527,
+          "size": "29 MB"
+        },
+        "current_compensation": {
+          "rows": 43493,
+          "size": "5928 kB"
+        }
+      }
+    },
+    "copy": {
+      "seconds": 9.1,
+      "employees": 10000,
+      "records": 178527,
+      "rows_per_second": 20657,
+      "checksum": "24ec6fb14f38a38b9d91ab0faf58a2ab",
+      "sizes": {
+        "employees": {
+          "rows": 5000,
+          "size": "4488 kB"
+        },
+        "compensation_records": {
+          "rows": 178527,
+          "size": "30 MB"
+        },
+        "current_compensation": {
+          "rows": 43493,
+          "size": "5920 kB"
+        }
+      }
+    }
+  }
+}

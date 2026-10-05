@@ -250,6 +250,19 @@ def test_email_is_unique_case_insensitively(db, ref):
         make_employee(db, ref, email="ADA@Example.com")
 
 
+@pytest.mark.parametrize(
+    ("n", "code"),
+    [
+        (42, "EMP-000042"),
+        (999_999, "EMP-999999"),
+        (1_000_000, "EMP-1000000"),  # lpad alone would truncate this to EMP-100000
+        (12_345_678, "EMP-12345678"),
+    ],
+)
+def test_employee_code_pads_but_never_truncates(db, n, code):
+    assert db.scalar(text("SELECT employee_code(:n)"), {"n": n}) == code
+
+
 def test_employee_code_is_unique(db, ref):
     first = make_employee(db, ref)
     db.refresh(first)

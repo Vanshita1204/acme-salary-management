@@ -113,26 +113,43 @@ Distinct from Phase 1.2's reference-data pre-population — this generates the l
   - Allowances: housing/transport/meal where customary, revised with each review.
   - Reimbursements: internet for everyone (inside or outside CTC per company policy), learning/wellness for some.
   - Nothing is dated after termination or the as-of date. Every row passes the DB triggers (hire date, currency, base pay > 0).
-- **Inserts:** batched multi-row `INSERT`s (employees with `RETURNING id`, then records). `current_compensation` is filled in one `DISTINCT ON` statement for the inserted employees. Revisit with `COPY` based on Phase 4's E1 result.
+- **Inserts:** `COPY` by default, chosen by Phase 4's E1 (`--method row|orm|batch|copy` keeps the alternatives). The seed streams in 5,000-employee chunks, committing each, so memory stays flat even at 1M. `current_compensation` is filled per chunk in one `DISTINCT ON` statement.
 - **Done when (verified):** 10,000 employees, ~180,000 compensation records and ~43,700 current-compensation rows in ~18 s on the docker-compose Postgres. Checks:
   - Every employee has exactly one current base-pay row, and no record falls after a termination date.
   - Local medians are plausible (e.g. India ₹21 L base, US $124 k).
   - `tests/unit/test_employee_seed.py` covers determinism and history invariants without a DB; `tests/integration/test_employee_seed_db.py` runs a 150-employee seed in a rolled-back transaction.
 - **Known simplification:** no relocations or currency changes in the generated history — those need FR-7's ordering (update the employee, then write records) and come with Phase 11.
 
-## Phase 4 — Scale Lab, Phase 1 experiments (before submission)
-Per `docs/SCALE_LAB.md` E1–E3, run at S (10k) and at least M (1M):
-- E1 bulk loading method → fixes the seed script's insert strategy.
-- E2 keyset vs. offset pagination → confirms the FR-1 pagination approach before the directory endpoint is built on it.
-- E3 current-compensation strategy (`DISTINCT ON` / window function / denormalized table) → confirms or revises the Phase 1 data model.
-- Record results in `docs/PERFORMANCE.md` as each experiment completes; feed conclusions back into Phases 1 and 3 before moving on.
-- **Done when:** the pagination and current-compensation design used in Phase 5+ is evidence-based, not assumed.
+## Phase 4 — Scale Lab, Phase 1 experiments (before submission) — Done
+Per `docs/SCALE_LAB.md` E1–E3, run at S (10k) and M (1M); full results in **`docs/PERFORMANCE.md`**.
+- **Harness:** `backend/scale_lab/`.
+  - Each experiment builds its own `acme_lab_*` database with the app's migrations and seeds, so the dev database is never touched.
+  - Timing: warm-up + 5 runs, median reported, `EXPLAIN (ANALYZE, BUFFERS)` captured.
+  - Raw results go to `scale_lab/results/*.json`; `python -m scale_lab.report` renders the tables.
+  - To make 1M possible, the seed was made streaming (5,000-employee chunks, commit per chunk, flat memory), with the insert method selectable (`app/seed/loaders.py`: row / orm / batch / copy).
+- **E1 bulk loading:** `COPY` (20.7k rows/s) > batched `INSERT` (12.5k) > ORM (7.2k) > row-by-row (2.6k). A checksum confirmed identical data across methods. Linear to 1M (1M employees + 17.8M records in ~17 min). → **The seed now defaults to `COPY`.**
+  - **Found a real bug at 1M:** `lpad` truncation made hire #1,000,000's code collide with `EMP-100000`. Fixed in migration `0006` (`employee_code()` function) with a boundary test.
+- **E2 pagination:** at 1M, `OFFSET` takes 1.6–2.6 s for the last page; keyset stays < 1 ms everywhere. → **Keyset confirmed** (used by Phase 5).
+- **E3 current compensation:**
+  - Pages are ~2 ms with any strategy, but only with the composite `(employee, type, effective_date)` index; without it, 2.9 s at 1M. → **Index confirmed essential.**
+  - For whole-population queries the `current_compensation` table is 3–4× faster than deriving from history. → **Table confirmed.**
+  - **Limit:** even with the table, the compensation sort and country aggregates take 2.9–4.2 s at 1M (22–61 ms at 10k). → Before scaling past the deployed 10k, add `employee_totals` with an indexed USD total, and/or materialized analytics (E5).
+- **Done when (verified):** the pagination and current-compensation design used in Phase 5+ rests on these measurements (`docs/PERFORMANCE.md` summary table).
 
-## Phase 5 — Employee Directory API (FR-1)
-- `GET /employees`: keyset pagination (next/previous), free-text search (name/email/code), filters (department, country, title, level, status, combinable), sort (name, hire date, compensation).
-- Reads current total compensation from the `CurrentCompensation` table (no per-request recomputation; only types with `counts_toward_total`), converted to the selected reporting currency via Phase 2's currency module.
-- Indexes on every filtered/sorted column (§7).
-- **Done when:** p95 latency on the 10k seed is under 500 ms (§1) for a representative mix of filter/search/sort combinations.
+## Phase 5 — Employee Directory API (FR-1) — Done
+- **`GET /employees`:**
+  - **Search:** `q` matches full name, last name, email or employee code, case-insensitive, with LIKE wildcards escaped.
+  - **Filters:** `department`, `country`, `job_title`, `job_level`, `status`. They combine with AND; repeat one for OR within it (`?country=IN&country=US`).
+  - **Sort:** `name` (default), `hire_date` or `compensation`, with `order=asc|desc`. Ties always break on `id`.
+  - **Paging:** `limit` 1–200 (default 50). `reporting_currency` defaults to USD.
+- **Keyset pagination** (confirmed by Scale Lab E2 — `OFFSET` takes 1.6–2.6 s for the last page at 1M employees, keyset stays under 1 ms):
+  - Responses carry opaque `next_cursor` / `prev_cursor` (`app/domain/pagination.py`). Each cursor encodes its sort, order, direction and the boundary row's key.
+  - Previous pages are read by walking the index backwards and reversing the result.
+  - A cursor from a different sort or order, or one that's been tampered with, is a `400`, never a `500`.
+- **Totals** come from `current_compensation` (E3), annualized and limited to `counts_toward_total` types. Each item has `total_compensation` (employee's currency) and `total_compensation_reporting` (converted via `app.domain.currency`; `null` if a rate is missing). `rates_as_of` lists the date of every rate used.
+- **Sorting by compensation** orders by the total in USD at the latest stored rates, computed in SQL. That is the same order for any reporting currency, since conversion divides every total by one rate. It can't use an index — it aggregates every matching employee's current compensation — which is the trade-off recorded in `docs/DATABASE_DESIGN.md`. See Phase 4's 1M result for when it matters.
+- Logic in `app/services/directory.py`; tests in `tests/integration/test_directory_api.py` (every sort paged forward then back across all pages, cross-currency ordering, filters, search, cursor errors) and `tests/unit/test_pagination.py`.
+- **Done when (verified):** `python -m scale_lab.directory_latency` — 15 search/filter/sort combinations, first and second pages, 300 requests through the full FastAPI stack on the 10k seed: **p95 42 ms** (target < 500 ms). Slowest are the compensation sort (~42 ms median) and searches that scan without an index (~28 ms). At 1M (informational) index-backed requests stay under ~65 ms, but those two reach 2.7–3.6 s and 0.8–1.3 s — the scaling path is `employee_totals` and a `pg_trgm` search index (Scale Lab E4); see `docs/PERFORMANCE.md`.
 
 ## Phase 6 — Employee Profile, Create/Edit/Terminate (FR-2, FR-3)
 - `GET /employees/{id}`: full detail + current breakdown per type (local + reporting currency, annualized) + reverse-chronological history per type with reason, note, changed by, and % change (Phase 2 formula).
