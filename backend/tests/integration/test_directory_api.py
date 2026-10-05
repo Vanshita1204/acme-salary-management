@@ -1,5 +1,7 @@
 """GET /employees (FR-1): search, filters, sorts, keyset pagination, reporting totals."""
 
+import csv
+import io
 import uuid
 from datetime import date
 from decimal import Decimal
@@ -23,6 +25,7 @@ from app.seed.change_reasons import load_change_reasons
 from app.seed.companies import load_companies
 from app.seed.compensation_types import load_compensation_types
 from app.seed.reference import load_reference_data
+from app.services.exports import EXPORT_COLUMNS
 
 FAR_FUTURE = date(
     2099, 1, 1
@@ -346,3 +349,108 @@ def test_malformed_cursors_are_400(client, cursor):
 def test_limit_is_bounded(client):
     assert client.get("/employees", params={"limit": 0}).status_code == 422
     assert client.get("/employees", params={"limit": 201}).status_code == 422
+
+
+# --- CSV export (FR-6): exactly the view the directory shows ---
+
+
+def export(client, world, **params) -> tuple[list[str], list[dict[str, str]]]:
+    response = client.get(
+        "/employees/export",
+        params={"department_id": world["department_id"], **params},
+    )
+    assert response.status_code == 200, response.text
+    assert response.content.startswith(b"\xef\xbb\xbf")  # BOM, for Excel
+    reader = csv.DictReader(io.StringIO(response.content.decode("utf-8-sig")))
+    return list(reader.fieldnames), list(reader)
+
+
+def every_page(client, world, **params) -> list[dict]:
+    items, page = [], directory(client, world, limit=2, **params)
+    while True:
+        items += page["items"]
+        if not page["next_cursor"]:
+            return items
+        page = directory(client, world, limit=2, cursor=page["next_cursor"], **params)
+
+
+@pytest.mark.parametrize(
+    "params",
+    [
+        {},
+        {"sort": "hire_date", "order": "desc"},
+        {"sort": "level", "order": "asc"},
+        {"sort": "compensation", "order": "desc", "reporting_currency": "EUR"},
+        {"country": ["GB", "IN"], "sort": "compensation", "order": "asc"},
+        {"status": "active", "q": "a", "reporting_currency": "INR"},
+    ],
+)
+def test_export_matches_paging_through_the_directory(client, world, params):
+    _, rows = export(client, world, **params)
+    shown = every_page(client, world, **params)
+
+    assert [r["code"] for r in rows] == [i["code"] for i in shown]
+    for row, item in zip(rows, shown, strict=True):
+        assert row["last_name"] == item["last_name"]
+        assert row["job_title"] == item["job_title"]
+        assert row["total_compensation"] == (item["total_compensation"] or "")
+        assert row["total_compensation_reporting"] == (
+            item["total_compensation_reporting"] or ""
+        )
+
+
+def test_export_columns_and_values(client, world):
+    header, rows = export(client, world, reporting_currency="EUR")
+
+    assert header == list(EXPORT_COLUMNS)
+    by_name = {r["last_name"]: r for r in rows}
+    ada = by_name["Lovelace"]  # paid in EUR: no conversion, so no rate date
+    assert (ada["currency"], ada["total_compensation"]) == ("EUR", "96000.00")
+    assert (ada["total_compensation_reporting"], ada["rates_as_of"]) == ("96000.00", "")
+    ravi = by_name["Kumar"]  # 7.2M INR = 72k EUR at the stored 2099-01-01 rates
+    assert (ravi["total_compensation"], ravi["reporting_currency"]) == (
+        "7200000.00",
+        "EUR",
+    )
+    assert (ravi["total_compensation_reporting"], ravi["rates_as_of"]) == (
+        "72000.00",
+        "2099-01-01",
+    )
+    assert by_name["Dijkstra"]["status"] == "terminated"
+    assert by_name["Dijkstra"]["termination_date"] == "2025-01-01"
+
+
+def test_export_is_a_csv_download(client, world):
+    response = client.get(
+        "/employees/export", params={"department_id": world["department_id"]}
+    )
+    assert response.headers["content-type"].startswith("text/csv")
+    assert response.headers["content-disposition"].startswith(
+        'attachment; filename="employees_'
+    )
+
+
+def test_export_neutralises_spreadsheet_formulas(db, client, world):
+    world["people"]["ada"].first_name = '=HYPERLINK("http://evil.example","x")'
+    world["people"]["alan"].last_name = "+1-555"
+    db.flush()
+
+    _, rows = export(client, world)
+
+    names = {(r["first_name"], r["last_name"]) for r in rows}
+    assert ('\'=HYPERLINK("http://evil.example","x")', "Lovelace") in names
+    assert ("Alan", "'+1-555") in names
+
+
+def test_export_of_an_empty_view_is_just_the_header(client, world):
+    header, rows = export(client, world, q="zzzz-no-match")
+    assert header == list(EXPORT_COLUMNS)
+    assert rows == []
+
+
+@pytest.mark.parametrize(
+    "params", [{"reporting_currency": "ZZZ"}, {"sort": "salary"}, {"status": "gone"}]
+)
+def test_export_rejects_what_the_directory_rejects(client, params):
+    assert client.get("/employees/export", params=params).status_code == 422
+    assert client.get("/employees", params=params).status_code == 422

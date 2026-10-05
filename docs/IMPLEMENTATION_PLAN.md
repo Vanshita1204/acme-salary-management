@@ -278,9 +278,16 @@ Found during Phase 7: `employees.department`, `.job_title` and `.job_level` are 
 - **Done when (verified):** `tests/integration/test_import_api.py` (19 tests) — a 50-row file with one bad row (row 38, unknown country) is a `422` reporting that row, column and reason with zero employees saved; validate saves nothing; every bad row in a file is reported; duplicates within the file and existing emails; case-insensitive names and headers; BOM and blank lines; the row cap; non-UTF-8 and oversized files; stale previews; rollback after a mid-insert failure; future hire dates. Timed live on a fresh database: a 10,000-row file validates in 1.1 s and confirms in 4.2 s; re-uploading it is rejected with 10,000 "already exists" errors.
 
 
-## Phase 10 — CSV Export (FR-6)
+## Phase 10 — CSV Export (FR-6) — Done
 - Exports the Phase 5 directory view's current filter/search/sort state, with local + reporting currency columns.
 - **Done when:** export output matches what the directory UI is showing when exported.
+- **As built:**
+  - `GET /employees/export` takes exactly the directory's parameters (search, filters, sort, order, `reporting_currency`) and returns every match as a CSV download (`employees_YYYY-MM-DD.csv`), unpaged.
+  - **Same view by construction:** the parameters are one shared FastAPI dependency (`directory_query`), and `app/services/directory.py` `export_employees` runs the directory's own sort-key and filter statement without the page limit. Totals come from the same `with_totals` helper the directory pages use (factored out of `list_employees`). Due future-dated records are promoted first, as on every read.
+  - **Columns** (`app/services/exports.py` `EXPORT_COLUMNS`): code, names, email, department, title, level, country, status, hire and termination dates, currency, annual total in the employee's currency, reporting currency, annual total in the reporting currency, and `rates_as_of` — the older of the two rate dates used for that row's conversion (empty when nothing was converted). Plain decimals, ISO dates.
+  - **Excel-safe:** UTF-8 with a byte-order mark (accented names display correctly), and text cells starting with `=`, `+`, `-`, `@`, tab or CR are prefixed with `'` so a spreadsheet doesn't run them as formulas (CSV injection).
+  - Built in memory: ~1.35 MB for 10,000 employees. Past the deployed size, stream it instead.
+- **Done when (verified):** the export tests in `tests/integration/test_directory_api.py` (13 new) page through the directory 2 rows at a time and compare it with the export for six views — every sort, ascending and descending, filters, search, three reporting currencies — same employees, same order, same totals in both currencies. Reversing the export's sort order fails all six. Also tested: columns and values (including a same-currency row with no rate date and a converted row with its rate date), terminated employees, formula neutralising, an empty view, and that invalid parameters are rejected exactly as by the directory. On the 10k seed a full export takes ~0.5 s.
 
 ## Phase 11 — Country and Currency Changes (FR-7)
 Two distinct operations, both built here:

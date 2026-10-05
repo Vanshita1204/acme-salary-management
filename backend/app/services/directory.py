@@ -39,6 +39,8 @@ from app.services.exchange_rates import latest_rates, require_supported_currency
 Sort = Literal["name", "hire_date", "level", "compensation"]
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
+CENT = Decimal("0.01")
+EXPORT_BATCH = 1_000  # employees per totals query when exporting
 NO_TOTAL = -1  # sort key for employees with no compensation yet: last when descending
 
 
@@ -174,6 +176,40 @@ def sort_key(query: DirectoryQuery) -> tuple[Select, list[ColumnElement], list]:
     return stmt, keys, parsers
 
 
+def with_totals(
+    session: Session,
+    employees: list[Employee],
+    reporting: str,
+    rates: dict[str, Decimal],
+) -> list[DirectoryRow]:
+    """Each employee with their annual total in their own and the reporting currency."""
+    totals = dict(
+        session.execute(
+            annual_totals().where(
+                CurrentCompensation.employee_id.in_([e.id for e in employees])
+            )
+        ).all()
+    )
+
+    def in_reporting(employee: Employee) -> Decimal | None:
+        total = totals.get(employee.id)
+        if total is None:
+            return None
+        try:
+            return convert(total, employee.currency, reporting, rates)
+        except MissingRateError:
+            return None
+
+    return [
+        DirectoryRow(
+            e,
+            None if totals.get(e.id) is None else totals[e.id].quantize(CENT),
+            in_reporting(e),
+        )
+        for e in employees
+    ]
+
+
 def list_employees(session: Session, query: DirectoryQuery) -> DirectoryPage:
     limit = max(1, min(query.limit, MAX_LIMIT))
     cursor = (
@@ -230,38 +266,41 @@ def list_employees(session: Session, query: DirectoryQuery) -> DirectoryPage:
         )
 
     employees = [row[0] for row in fetched]
-    totals = dict(
-        session.execute(
-            annual_totals().where(
-                CurrentCompensation.employee_id.in_([e.id for e in employees])
-            )
-        ).all()
-    )
     rates, rate_dates = latest_rates(session)
-
-    def in_reporting(employee: Employee) -> Decimal | None:
-        total = totals.get(employee.id)
-        if total is None:
-            return None
-        try:
-            return convert(total, employee.currency, reporting, rates)
-        except MissingRateError:
-            return None
-
     used = {e.currency for e in employees} | {reporting}
     return DirectoryPage(
-        rows=[
-            DirectoryRow(
-                e,
-                None
-                if totals.get(e.id) is None
-                else totals[e.id].quantize(Decimal("0.01")),
-                in_reporting(e),
-            )
-            for e in employees
-        ],
+        rows=with_totals(session, employees, reporting, rates),
         next_cursor=next_cursor,
         prev_cursor=prev_cursor,
         reporting_currency=reporting,
         rates_as_of={c: rate_dates[c] for c in sorted(used) if c in rate_dates},
+    )
+
+
+@dataclass(frozen=True)
+class DirectoryExport:
+    rows: list[DirectoryRow]  # every match, in the directory's order
+    reporting_currency: str
+    rate_dates: dict[str, date]  # every stored rate's date, by currency
+
+
+def export_employees(session: Session, query: DirectoryQuery) -> DirectoryExport:
+    """Every employee matching the directory's search and filters, in its sort order,
+    with the same totals (FR-6). The same statement as `list_employees`, unpaged, so
+    the export is exactly what paging through the directory shows."""
+    reporting = require_supported_currency(session, query.reporting_currency)
+    promote_due_records(session)
+    stmt, keys, _ = sort_key(query)
+    stmt = apply_filters(stmt, query)
+    ascending = query.order == "asc"
+    stmt = stmt.order_by(*[k.asc() if ascending else k.desc() for k in keys])
+    employees = list(session.scalars(stmt).unique())
+
+    rates, rate_dates = latest_rates(session)
+    rows = []
+    for start in range(0, len(employees), EXPORT_BATCH):
+        batch = employees[start : start + EXPORT_BATCH]
+        rows += with_totals(session, batch, reporting, rates)
+    return DirectoryExport(
+        rows=rows, reporting_currency=reporting, rate_dates=rate_dates
     )
