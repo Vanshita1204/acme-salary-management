@@ -1,6 +1,7 @@
+from dataclasses import replace
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlalchemy import select
 
 from app.api.db_errors import translate_db_errors
@@ -23,13 +24,15 @@ from app.schemas.employees import (
     TerminateIn,
 )
 from app.services import employees as employee_service
-from app.services.compensation import record_change
+from app.services.compensation import record_change, utc_today
 from app.services.directory import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
     DirectoryQuery,
+    export_employees,
     list_employees,
 )
+from app.services.exports import directory_csv
 
 router = APIRouter(tags=["employees"])
 
@@ -53,9 +56,7 @@ def create_employee(body: EmployeeIn, db: DbSession) -> Employee:
     return employee
 
 
-@router.get("/employees", response_model=DirectoryPageOut)
-def list_directory(
-    db: DbSession,
+def directory_query(
     q: Annotated[
         str | None, Query(description="Search name, email or employee code")
     ] = None,
@@ -72,35 +73,43 @@ def list_directory(
     status_: Annotated[list[Status] | None, Query(alias="status")] = None,
     sort: Literal["name", "hire_date", "level", "compensation"] = "name",
     order: Literal["asc", "desc"] = "asc",
+    reporting_currency: Annotated[str, Query(min_length=3, max_length=3)] = "USD",
+) -> DirectoryQuery:
+    """The directory's search, filters and sort — shared by the page and the export,
+    so an export is always of exactly the view on screen."""
+    return DirectoryQuery(
+        q=q,
+        department_ids=department_id or [],
+        countries=country or [],
+        job_title_ids=job_title_id or [],
+        job_level_ids=job_level_id or [],
+        min_level_rank=min_level_rank,
+        max_level_rank=max_level_rank,
+        statuses=list(status_ or []),
+        sort=sort,
+        order=order,
+        reporting_currency=reporting_currency,
+    )
+
+
+DirectoryView = Annotated[DirectoryQuery, Depends(directory_query)]
+
+
+@router.get("/employees", response_model=DirectoryPageOut)
+def list_directory(
+    db: DbSession,
+    view: DirectoryView,
     cursor: Annotated[
         str | None, Query(description="next_cursor or prev_cursor")
     ] = None,
     limit: Annotated[int, Query(ge=1, le=MAX_LIMIT)] = DEFAULT_LIMIT,
-    reporting_currency: Annotated[str, Query(min_length=3, max_length=3)] = "USD",
 ) -> DirectoryPageOut:
     """Employee directory (FR-1). Filters combine with AND; repeat a filter for OR
     within it (`?country=IN&country=US`, `?department_id=1&department_id=4`).
     Department, title and level filter by id (`GET /departments`, `/job-titles`,
     `/job-levels`). Paginate with the returned cursors."""
     try:
-        page = list_employees(
-            db,
-            DirectoryQuery(
-                q=q,
-                department_ids=department_id or [],
-                countries=country or [],
-                job_title_ids=job_title_id or [],
-                job_level_ids=job_level_id or [],
-                min_level_rank=min_level_rank,
-                max_level_rank=max_level_rank,
-                statuses=list(status_ or []),
-                sort=sort,
-                order=order,
-                cursor=cursor,
-                limit=limit,
-                reporting_currency=reporting_currency,
-            ),
-        )
+        page = list_employees(db, replace(view, cursor=cursor, limit=limit))
     except CursorError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
     out = DirectoryPageOut(
@@ -121,6 +130,25 @@ def list_directory(
     )
     db.commit()  # keep future-dated records promoted while reading (after building: commit expires)
     return out
+
+
+@router.get(
+    "/employees/export",
+    response_class=Response,
+    responses={200: {"content": {"text/csv": {}}}},
+)
+def export_directory(db: DbSession, view: DirectoryView) -> Response:
+    """The directory as CSV (FR-6): every employee matching the same search, filters
+    and sort as `GET /employees`, unpaged, with annual total compensation in their
+    own and the reporting currency."""
+    content = directory_csv(export_employees(db, view))
+    db.commit()  # keep future-dated records promoted while reading
+    filename = f"employees_{utc_today().isoformat()}.csv"
+    return Response(
+        content=content,
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 @router.get("/employees/{employee_id}", response_model=ProfileOut)
