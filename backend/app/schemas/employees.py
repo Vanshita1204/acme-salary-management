@@ -4,7 +4,14 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, EmailStr, Field
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    EmailStr,
+    Field,
+    model_validator,
+)
 
 from app.schemas.catalog import NonEmpty, ORMModel
 
@@ -198,3 +205,53 @@ class ProfileOut(BaseModel):
     total_compensation_reporting: Decimal | None
     current: list[CurrentCompensationOut]
     history: list[HistoryItemOut]  # newest first
+
+
+# --- country and currency changes (FR-7) ---
+
+
+class NewAmountIn(BaseModel):
+    """The HR-entered amount for one current compensation type, in the new currency,
+    per that type's period. Never converted automatically."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    compensation_type_id: int
+    amount: Annotated[Money, Field(ge=0)]
+
+
+class CurrencyChangeIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    currency: CurrencyCode
+    amounts: list[NewAmountIn]  # one per current compensation type
+    change_reason_id: int  # any reason from the shared list, e.g. market adjustment
+    effective_date: date
+    changed_by: NonEmpty
+    note: str | None = None
+
+
+class RelocationIn(BaseModel):
+    """Move the employee to another country. Base pay is re-recorded unchanged as a
+    "relocation" record, unless `currency` is given too: then every current type is
+    re-recorded in it with `amounts`, in the same step."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    country: CountryCode
+    effective_date: date
+    changed_by: NonEmpty
+    note: str | None = None
+    currency: CurrencyCode | None = None
+    amounts: list[NewAmountIn] | None = None
+
+    @model_validator(mode="after")
+    def amounts_go_with_currency(self) -> "RelocationIn":
+        if (self.currency is None) != (self.amounts is None):
+            raise ValueError("currency and amounts must be given together")
+        return self
+
+
+class ChangeOut(BaseModel):
+    employee: EmployeeOut
+    records: list[CompensationChangeOut]  # one per type written

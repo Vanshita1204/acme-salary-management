@@ -9,9 +9,11 @@ from app.api.deps import DbSession, get_or_404
 from app.domain.pagination import CursorError
 from app.models import CompensationRecord, Employee
 from app.schemas.employees import (
+    ChangeOut,
     CompensationChangeOut,
     CompensationRecordIn,
     CompensationRecordOut,
+    CurrencyChangeIn,
     CurrentCompensationOut,
     DirectoryItem,
     DirectoryPageOut,
@@ -20,10 +22,12 @@ from app.schemas.employees import (
     EmployeeUpdate,
     HistoryItemOut,
     ProfileOut,
+    RelocationIn,
     Status,
     TerminateIn,
 )
 from app.services import employees as employee_service
+from app.services import relocation
 from app.services.compensation import record_change, utc_today
 from app.services.directory import (
     DEFAULT_LIMIT,
@@ -33,6 +37,7 @@ from app.services.directory import (
     list_employees,
 )
 from app.services.exports import directory_csv
+from app.services.relocation import ChangeResult, NewAmount
 
 router = APIRouter(tags=["employees"])
 
@@ -229,6 +234,67 @@ def terminate_employee(employee_id: int, body: TerminateIn, db: DbSession) -> Em
         db.commit()
     db.refresh(employee)
     return employee
+
+
+def change_out(result: ChangeResult) -> ChangeOut:
+    return ChangeOut(
+        employee=EmployeeOut.model_validate(result.employee),
+        records=[
+            CompensationChangeOut(
+                **CompensationRecordOut.model_validate(c.record).model_dump(),
+                is_current=c.is_current,
+            )
+            for c in result.records
+        ],
+    )
+
+
+@router.post("/employees/{employee_id}/relocate", response_model=ChangeOut)
+def relocate_employee(employee_id: int, body: RelocationIn, db: DbSession) -> ChangeOut:
+    """Move the employee to another country (FR-7), recorded in their compensation
+    history as a dated "relocation" record for base pay — same amount and currency,
+    unless a currency change is included, in which case every current type is
+    re-recorded in the new currency with the given amounts."""
+    amounts = (
+        None
+        if body.amounts is None
+        else [NewAmount(a.compensation_type_id, a.amount) for a in body.amounts]
+    )
+    with translate_db_errors(db):
+        result = relocation.relocate(
+            db,
+            employee_id,
+            country=body.country,
+            effective_date=body.effective_date,
+            changed_by=body.changed_by,
+            note=body.note,
+            currency=body.currency,
+            amounts=amounts,
+        )
+        db.commit()
+    return change_out(result)
+
+
+@router.post("/employees/{employee_id}/change-currency", response_model=ChangeOut)
+def change_employee_currency(
+    employee_id: int, body: CurrencyChangeIn, db: DbSession
+) -> ChangeOut:
+    """Change the employee's pay currency (FR-7). Every current compensation type is
+    re-recorded in the new currency with an amount HR provides — nothing is
+    converted automatically — in the same transaction that changes the currency."""
+    with translate_db_errors(db):
+        result = relocation.change_currency(
+            db,
+            employee_id,
+            currency=body.currency,
+            amounts=[NewAmount(a.compensation_type_id, a.amount) for a in body.amounts],
+            change_reason_id=body.change_reason_id,
+            effective_date=body.effective_date,
+            changed_by=body.changed_by,
+            note=body.note,
+        )
+        db.commit()
+    return change_out(result)
 
 
 @router.post(
