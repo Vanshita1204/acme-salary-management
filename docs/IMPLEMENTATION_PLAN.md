@@ -258,12 +258,25 @@ Found during Phase 7: `employees.department`, `.job_title` and `.job_level` are 
 - **Done when (verified):** `tests/integration/test_daily_job.py` (12 tests) — with the provider failing (fake transport returning 503), the job reports failure, the profile and directory still convert with the previous stored rates and show those rates' date, and due records are still promoted; a successful fetch is used by the next read; the job doesn't refetch within an hour but does refetch inside the API's 24 h window; worker wake-up times; reporting-currency validation. Also run live: the provider is unreachable from the build sandbox (403), and the job logged the failure, promoted, and exited 1. The analytics endpoints (Phase 12) must get the same provider-failure test when they're built.
 
 
-## Phase 9 — CSV Import (FR-5)
+## Phase 9 — CSV Import (FR-5) — Done
 - Template download endpoint. Columns: name, email, company, department, title, level, country, hire date, currency, base pay amount — the base-pay type only; other compensation types are added afterward through Phase 7, not at import.
 - `POST /import/validate`: full-file validation via Phase 2's rules, returns per-row errors; nothing persisted. Department, title and level must match Phase 7A's reference lists (case-insensitive); unknown values are row errors.
 - `POST /import/confirm`: re-validates and inserts all-or-nothing in one transaction, writing each employee's row plus one base-pay compensation record with reason "new hire" (reject silently-stale previews — re-validate against current DB state, e.g. emails created since the preview).
 - 10,000-row cap enforced before validation runs.
 - **Done when:** a file with one bad row (of many) results in zero rows saved, with the bad row's number/column/reason reported.
+- **As built:**
+  - Endpoints in `app/api/imports.py`, service in `app/services/imports.py`; validation stays the pure `app.domain.csv_import` from Phase 2 (extended in 7A).
+    - `GET /import/template`: the header row as a CSV download, nothing else (a sample row could be imported by mistake).
+    - `POST /import/validate` (multipart `file`): `{ok, row_count, errors[{row, column, reason}], preview}` — always `200`; `preview` is the first 100 valid rows as they'd be saved (ids for company/department/title/level). Nothing is written.
+    - `POST /import/confirm` (multipart `file` + form `changed_by`): `201 {created, employee_ids}`, or `422` with the same report as `/validate` and nothing saved.
+  - **Parsing:** UTF-8 (an Excel byte-order mark is accepted; anything else is `422`), header names trimmed and case-insensitive, blank lines skipped, extra columns ignored. Uploads over 10 MB are `413` (the cap only needs ~1 MB for 10,000 template rows).
+  - **Row cap:** the 10,000-row check runs before any row is validated; an over-long file gets one error on row 1.
+  - **Lookups:** the database context is loaded once per request. Only the file's own emails are checked against `employees`, so the lookup doesn't grow with the employee table.
+  - **Confirm re-validates** against the current database — an email created between preview and confirm is reported, not skipped.
+  - **Inserts are set-based** in one transaction: employees, then their "new hire" base-pay records (effective on the hire date, the DB triggers still check each), then current-compensation pointers for hire dates up to today. A future hire date is stored like any future-dated record and becomes current on that date (Phase 7/8). Every imported employee starts `active`.
+  - **Atomicity:** any failure after the first insert (simulated in a test) rolls the whole file back through `translate_db_errors`.
+- **Done when (verified):** `tests/integration/test_import_api.py` (19 tests) — a 50-row file with one bad row (row 38, unknown country) is a `422` reporting that row, column and reason with zero employees saved; validate saves nothing; every bad row in a file is reported; duplicates within the file and existing emails; case-insensitive names and headers; BOM and blank lines; the row cap; non-UTF-8 and oversized files; stale previews; rollback after a mid-insert failure; future hire dates. Timed live on a fresh database: a 10,000-row file validates in 1.1 s and confirms in 4.2 s; re-uploading it is rejected with 10,000 "already exists" errors.
+
 
 ## Phase 10 — CSV Export (FR-6)
 - Exports the Phase 5 directory view's current filter/search/sort state, with local + reporting currency columns.
