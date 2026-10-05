@@ -4,9 +4,11 @@ from pathlib import Path
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.db.session import engine
+from app.db.session import engine, get_db
+from app.main import app
 
 BACKEND_DIR = Path(__file__).resolve().parents[2]
 
@@ -29,3 +31,13 @@ def db(migrated_db: None) -> Generator[Session, None, None]:
         session.close()
         transaction.rollback()
         connection.close()
+
+
+@pytest.fixture
+def client(db: Session) -> Generator[TestClient, None, None]:
+    """API client whose requests run inside the test's rolled-back transaction."""
+    app.dependency_overrides[get_db] = lambda: db
+    try:
+        yield TestClient(app)
+    finally:
+        app.dependency_overrides.pop(get_db, None)

@@ -19,7 +19,7 @@ Everything Phase 1 needs before it can touch a table. Done.
 - `migrations/env.py`: rewired to pull the DB URL from `Settings` (`alembic.ini` no longer contains a URL at all), and to use `Base.metadata` as `target_metadata`. Calls `fileConfig(..., disable_existing_loggers=False)` so running migrations in-process (the test fixture does) doesn't silence app loggers.
 - **Done when (verified):** `docker compose up -d` brings up a healthy Postgres container; the app's `Settings`/`engine` connect to it (`SELECT 1` succeeds); `alembic upgrade head` runs cleanly against it (currently a no-op — zero migrations until Phase 1); `pytest` passes; `TestClient(app).get("/health")` returns `200`.
 
-## Phase 1 — Foundation: models, reference data, basic CRUD
+## Phase 1 — Foundation: models, reference data, basic CRUD — Done
 Three steps, in order — nothing in Phase 2 onward starts until all three are done.
 
 ### 1.1 Models & migrations — Done
@@ -47,7 +47,7 @@ Small, structural lookup data the app can't function without — not the 10,000-
 - **Seeding order:** `alembic upgrade head`, then `python -m app.seed.reference` (currencies, countries, live rates), `python -m app.seed.companies`, `python -m app.seed.compensation_types`, `python -m app.seed.change_reasons`. Each is idempotent.
 - **Done when (verified):** after 1.1's migrations and the loads above, every lookup table is populated and the smoke checks pass — every country's `default_currency` resolves (`check_reference_data`), exactly one base-pay type exists (`check_compensation_types`), and the reasons the rules rely on exist (`check_change_reasons`). Each loader is also tested to insert nothing on a second run.
 
-### 1.3 Basic CRUD
+### 1.3 Basic CRUD — Done
 Minimal, business-rule-light REST endpoints over the models above — enough to exercise the schema end-to-end before building the real FR-driven endpoints (Phases 5–12).
 - Simple create/list/get for `companies`.
 - Compensation-type catalog management — **exposed to the Phase 13 HR UI** (HR adds types like a new bonus or reimbursement without a code change):
@@ -59,7 +59,17 @@ Minimal, business-rule-light REST endpoints over the models above — enough to 
 - No update/delete of types or reasons: existing records point at them, and renaming or removing one would silently rewrite history. Retiring a type (hide from new-record forms, keep for history) is a later addition if needed.
 - Simple create/get for `employees` and `compensation_records` (no keyset pagination, filtering, or analytics yet — those are Phase 5+).
 - No update/delete endpoints on `compensation_records` — the API surface itself should make append-only obvious, not just the DB trigger.
-- **Done when:** every model can be created and read back through the API against the pre-populated reference data from 1.2, confirming the schema works end-to-end before any domain logic or business workflow is layered on.
+- **As built:**
+  - Routers in `app/api/`, schemas in `app/schemas/`.
+  - Read-only `GET /currencies` and `GET /countries` for form dropdowns.
+  - `POST/GET /companies`, `GET /companies/{id}`.
+  - `POST/GET /compensation-types`, `GET /compensation-types/{id}`. `is_base_pay` in the body is rejected (`extra="forbid"`), so created types are never base pay.
+  - `POST/GET /change-reasons`, `GET /change-reasons/{id}`. Codes are normalized to lowercase identifiers.
+  - `POST /employees`, `GET /employees/{id}`. `code` is ignored if sent; the database generates it.
+  - `POST/GET /employees/{id}/compensation-records` (history newest first), `GET /compensation-records/{id}`. Records take the employee's current country and currency rather than accepting them. `PUT`/`PATCH`/`DELETE` on records return `405`.
+  - **Error handling:** rules stay in the database. `app/api/db_errors.py` translates rejections into clean errors: unique violations → `409`; FK/check violations and trigger exceptions → `422`. Messages come from a few templates (`UNIQUE_MESSAGE`, `FOREIGN_KEY_MESSAGE`, `CHECK_MESSAGE`, …), filled in from the model metadata of whichever constraint failed — entity from the table, fields from the constraint's columns, the referenced table for FKs, the `chk_` name for checks; trigger messages pass through as written. Nothing is registered per table or constraint. `Base` uses Postgres's default constraint naming convention so model and database constraint names match. Non-rule database errors (e.g. connection loss) still surface as `500`.
+  - **Deferred on purpose:** the initial base-pay record on employee create (Phase 6) and keeping `current_compensation` in step with new records (Phase 7) — 1.3 stays business-rule-light.
+- **Done when (verified):** every model can be created and read back through the API against the 1.2 reference data, and every DB rule comes back as a 4xx — `tests/integration/test_crud_api.py`, which loads the 1.2 seeds inside the test transaction. Also checked live: the read endpoints against the seeded dev database.
 
 ## Phase 2 — Domain layer (pure functions, no DB/network)
 Lives under `backend/app/domain/`, unit-tested under `backend/tests/unit/`.

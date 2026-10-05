@@ -1,9 +1,24 @@
 from fastapi import FastAPI
 
-from app.api import exchange_rates
+from app.api import (
+    change_reasons,
+    companies,
+    compensation_types,
+    employees,
+    exchange_rates,
+    reference,
+)
 
 app = FastAPI(title="ACME Salary Management")
-app.include_router(exchange_rates.router)
+for module in (
+    reference,
+    companies,
+    compensation_types,
+    change_reasons,
+    employees,
+    exchange_rates,
+):
+    app.include_router(module.router)
 
 
 @app.get("/health")

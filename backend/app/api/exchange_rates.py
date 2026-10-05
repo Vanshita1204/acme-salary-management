@@ -2,17 +2,14 @@ from datetime import date
 from decimal import Decimal
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 from pydantic import BaseModel
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
-from app.db.session import get_db
+from app.api.deps import DbSession
 from app.domain.currency import MissingRateError, convert, cross_rate
 from app.models import Currency
 from app.services.exchange_rates import latest_rates, refresh_exchange_rates
-
-DbSession = Annotated[Session, Depends(get_db)]
 
 router = APIRouter(prefix="/exchange-rates", tags=["exchange-rates"])
 

@@ -1,6 +1,6 @@
 from collections.abc import Generator
 
-from sqlalchemy import create_engine
+from sqlalchemy import MetaData, create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import get_settings
@@ -10,7 +10,15 @@ SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, futu
 
 
 class Base(DeclarativeBase):
-    pass
+    # Postgres's own default constraint names, so unnamed model constraints carry the
+    # same name as in the database (app.api.db_errors looks constraints up by name).
+    metadata = MetaData(
+        naming_convention={
+            "pk": "%(table_name)s_pkey",
+            "uq": "%(table_name)s_%(column_0_N_name)s_key",
+            "fk": "%(table_name)s_%(column_0_N_name)s_fkey",
+        }
+    )
 
 
 def get_db() -> Generator[Session, None, None]:
