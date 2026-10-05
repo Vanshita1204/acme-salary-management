@@ -1,0 +1,19 @@
+# Render Blueprint: one web service (this repo's Dockerfile) + a managed Postgres.
+# New > Blueprint > pick this repo. The first deploy migrates and seeds 10,000 employees.
+services:
+  - type: web
+    name: acme-salary-management
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: acme-db
+          property: connectionString
+      - key: ENVIRONMENT
+        value: production
+databases:
+  - name: acme-db
+    plan: free
+    databaseName: acme
