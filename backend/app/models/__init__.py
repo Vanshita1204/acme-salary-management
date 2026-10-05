@@ -1,2 +1,22 @@
-# Phase 1 populates this package with one module per table (see docs/DATABASE_DESIGN.md)
-# and imports each one here, so Base.metadata is complete for Alembic autogenerate.
+from app.models.currency import Currency
+from app.models.country import Country
+from app.models.company import Company
+from app.models.compensation_type import CompensationType
+from app.models.change_reason import ChangeReason
+from app.models.employee import EMPLOYEE_STATUSES, Employee
+from app.models.compensation_record import CompensationRecord
+from app.models.current_compensation import CurrentCompensation
+from app.models.exchange_rate import ExchangeRate
+
+__all__ = [
+    "EMPLOYEE_STATUSES",
+    "ChangeReason",
+    "Company",
+    "CompensationRecord",
+    "CompensationType",
+    "Country",
+    "Currency",
+    "CurrentCompensation",
+    "Employee",
+    "ExchangeRate",
+]
