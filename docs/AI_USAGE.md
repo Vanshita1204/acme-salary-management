@@ -62,6 +62,38 @@ Instructions given to the coding agent are committed in _[e.g. `CLAUDE.md`]_.
 - **Correction:** Acceptable at 10,000 rows, but it breaks at 10 lakh. Moved to SQL-side aggregation (`percentile_cont`), a denormalised current-compensation table, keyset pagination, and PostgreSQL instead of SQLite.
 - **Follow-up:** Built a scale lab to test these decisions on 1M and 10M synthetic records (`docs/SCALE_LAB.md`).
 
+**9. Fixed four-column compensation model didn't fit real pay structures**
+- **Prompt:** Asked to add `company_name`/`termination_date` to employees, and to model compensation types (fixed, variable max, variable paid, equity, allowances with an allowance type, bonus with multiple types like quarterly/annual), each with its own change reasons.
+- **AI output:** Replaced the four fixed columns (`base_salary`/`annual_bonus`/`allowances`/`annual_equity_value`) and the single global `change_reason` enum with a `compensation_types` catalog + a `change_reasons` table scoped per type, and restructured `compensation_records`/`current_compensation` to one row per (employee, type).
+- **Decision:** Kept this shape — it generalizes to an arbitrary number of pay components instead of hardcoding four, which the brief's original "base + bonus + allowances + equity" phrasing didn't anticipate.
+
+**10. AI over-constrained a catalog meant to be user-extensible**
+- **Prompt:** Asked for `category`/`subtype` on compensation types to be "choice fields."
+- **AI output:** Added `CHECK (category IN (...))` and a compound `CHECK` restricting `subtype` to a fixed list per category.
+- **Correction:** Reversed — compensation types are added manually, so a hardcoded value list was wrong. Replaced the subtype-choice idea with `period_months` (an integer, not a time-period string) so any type can be annualized the same way (`amount * 12 / period_months`), and added an `is_base_pay` boolean so the "base salary > 0" rule doesn't depend on `category` staying a specific string.
+- **Lesson:** When a rule needs a stable signal (which type is "base pay"), use a dedicated column, not a convention on a free-text field that's explicitly meant to be edited.
+
+**11. Company-scoped catalog, then reversed to universal**
+- **Prompt:** Earlier instruction read as "the compensation type can be unique for a company, not employee," which AI interpreted as per-company scoping (`compensation_types.company_id`).
+- **Correction:** Later instructed to "make it universal" — `company_id` and its FK removed from `compensation_types` entirely; one shared catalog across all companies.
+- **Lesson:** An ambiguous scoping instruction ("unique for a company") should have been confirmed with a direct question before building a company-scoped schema, rather than guessing and redoing it once the guess proved wrong.
+
+**12. Country and currency are not the same thing**
+- **Prompt:** "currency should be on employee table... I can be in Dubai and still want to be paid in USD" — pushing back on an implicit assumption that pay currency derives from country.
+- **Correction:** Added `employees.currency` as its own field, independent of `employees.current_country` — no FK/CHECK ties them. `countries.default_currency` demoted to a seed-script convenience only, never a constraint.
+- **Lesson:** Two real-world-correlated fields (where someone is based, what currency they're paid in) aren't the same field; don't collapse them just because they usually agree.
+
+**13. Rejected auto-converting compensation amounts on a currency change**
+- **Prompt:** "current compensation doesn't need to have country and currency, employee table already has it" — then, when AI proposed auto-converting old amounts via the latest exchange rate on a currency change: "we don't know which conversion rate [to use]."
+- **AI output (rejected):** A trigger/service function that converted every current compensation amount into the new currency automatically using the latest stored exchange rate.
+- **Correction:** There's no principled choice of *which* rate (today's vs. each record's original date), and more importantly, auto-converting would make a permanently-recorded compensation figure depend on a live external rate at the moment of the edit — contradicting the existing "never depend on the exchange-rate provider" resilience principle, which until then had only been applied to reads. Replaced with a required HR-entry screen: one editable amount per current compensation type, submitted together as one transaction, no system-computed conversion.
+- **Lesson:** A stated resilience principle ("don't depend on the rate provider") has to be checked against *every* new feature that touches rates, not just the ones that look like reads.
+
+**14. Confirmed, not changed: cross-currency comparisons use one shared rate snapshot**
+- **Prompt:** Asked whether comparing two employees' pay in different currencies (e.g. $20k vs. ₹25L) requires knowing the exact date each salary was credited.
+- **AI output:** Explained that using each employee's own `effective_date` rate would compare two different points in currency history (apples to oranges); the correct approach — already specified in §5/FR-8 — is one current rate snapshot applied uniformly to every employee being compared, with the rate date displayed.
+- **Decision:** No schema or spec change; confirmed the existing design already prevents this bug, rather than needing a fix.
+
 ### Phase 3 — Implementation
 _[Add entries as you build: what the agent generated, what you changed, bugs it introduced, tests that caught them.]_
 
