@@ -313,6 +313,7 @@ def test_record_is_written_in_employees_country_and_currency(client, catalog, em
     record = response.json()
     assert (record["country"], record["currency"]) == ("IN", "INR")
     assert record["amount"] == "150000.00"
+    assert record.pop("is_current") is True
     assert client.get(f"/compensation-records/{record['id']}").json() == record
 
 

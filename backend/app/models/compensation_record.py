@@ -13,6 +13,7 @@ from sqlalchemy import (
     Numeric,
     Text,
     func,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -61,5 +62,12 @@ class CompensationRecord(Base):
             "employee_id",
             "compensation_type_id",
             effective_date.desc(),
+        ),
+        # Records dated after the day they were written: the only ones that can
+        # become current later, promoted on read (app.services.compensation).
+        Index(
+            "ix_comp_records_future_dated",
+            "effective_date",
+            postgresql_where=text("effective_date > (created_at AT TIME ZONE 'UTC')::date"),
         ),
     )

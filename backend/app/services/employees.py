@@ -21,15 +21,20 @@ from app.models import (
     CurrentCompensation,
     Employee,
 )
-from app.services.compensation import append_record, reason_id, utc_today
+from app.services.compensation import (
+    EMPLOYEE_NOT_FOUND,
+    TERMINATED,
+    append_record,
+    promote_due_records,
+    reason_id,
+    utc_today,
+)
 from app.services.errors import Problem, ServiceError
 from app.services.exchange_rates import latest_rates
 
 NEW_HIRE = "new_hire"
-TERMINATED = "terminated"
 CENT = Decimal("0.01")
 
-EMPLOYEE_NOT_FOUND = "employee not found"
 NO_BASE_PAY_TYPE = "no base-pay compensation type is configured"
 ALREADY_TERMINATED = "employee is already terminated"
 TERMINATION_BEFORE_HIRE = "termination_date cannot be before hire_date"
@@ -168,6 +173,7 @@ class Profile:
 
 def get_profile(session: Session, employee_id: int, reporting_currency: str) -> Profile:
     employee = get_employee(session, employee_id)
+    promote_due_records(session)
     reporting = reporting_currency.upper()
     rates, rate_dates = latest_rates(session)
 

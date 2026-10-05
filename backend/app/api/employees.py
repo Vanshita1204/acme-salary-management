@@ -8,6 +8,7 @@ from app.api.deps import DbSession, get_or_404
 from app.domain.pagination import CursorError
 from app.models import CompensationRecord, Employee
 from app.schemas.employees import (
+    CompensationChangeOut,
     CompensationRecordIn,
     CompensationRecordOut,
     CurrentCompensationOut,
@@ -22,7 +23,7 @@ from app.schemas.employees import (
     TerminateIn,
 )
 from app.services import employees as employee_service
-from app.services.compensation import append_record
+from app.services.compensation import record_change
 from app.services.directory import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
@@ -92,7 +93,7 @@ def list_directory(
         )
     except CursorError as exc:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(exc)) from exc
-    return DirectoryPageOut(
+    out = DirectoryPageOut(
         items=[
             DirectoryItem(
                 **EmployeeOut.model_validate(row.employee).model_dump(
@@ -108,6 +109,8 @@ def list_directory(
         reporting_currency=page.reporting_currency,
         rates_as_of=page.rates_as_of,
     )
+    db.commit()  # keep future-dated records promoted while reading (after building: commit expires)
+    return out
 
 
 @router.get("/employees/{employee_id}", response_model=ProfileOut)
@@ -118,7 +121,7 @@ def get_profile(
 ) -> ProfileOut:
     """Employee details, current compensation breakdown and full history (FR-2)."""
     profile = employee_service.get_profile(db, employee_id, reporting_currency)
-    return ProfileOut(
+    out = ProfileOut(
         employee=EmployeeOut.model_validate(profile.employee),
         reporting_currency=profile.reporting_currency,
         rates_as_of=profile.rates_as_of,
@@ -162,6 +165,8 @@ def get_profile(
             for item in profile.history
         ],
     )
+    db.commit()  # keep future-dated records promoted while reading (after building: commit expires)
+    return out
 
 
 @router.patch("/employees/{employee_id}", response_model=EmployeeOut)
@@ -189,25 +194,38 @@ def terminate_employee(employee_id: int, body: TerminateIn, db: DbSession) -> Em
 
 
 @router.post(
-    "/employees/{employee_id}/compensation-records",
-    response_model=CompensationRecordOut,
+    "/employees/{employee_id}/compensation",
+    response_model=CompensationChangeOut,
     status_code=status.HTTP_201_CREATED,
 )
-def create_compensation_record(
+def record_compensation_change(
     employee_id: int, body: CompensationRecordIn, db: DbSession
-) -> CompensationRecord:
-    """Append a record in the employee's current country and currency.
+) -> CompensationChangeOut:
+    """Record a compensation change for one type (FR-4).
 
-    Records are append-only: there is deliberately no update or delete endpoint.
-    Current compensation follows records in effect today; Phase 7 adds the full
-    compensation-change workflow (future dates, validation before the DB).
+    Appends a record in the employee's current country and currency; history is
+    append-only, so mistakes are fixed with a new "correction" record. A future-dated
+    change is stored now and becomes current on its effective date.
     """
-    employee = get_or_404(db, Employee, employee_id, "employee")
     with translate_db_errors(db):
-        record = append_record(db, employee, **body.model_dump())
+        change = record_change(db, employee_id, **body.model_dump())
         db.commit()
-    db.refresh(record)
-    return record
+    db.refresh(change.record)
+    return CompensationChangeOut(
+        **CompensationRecordOut.model_validate(change.record).model_dump(),
+        is_current=change.is_current,
+    )
+
+
+# The Phase 1.3 path, kept for existing clients: same operation, same rules.
+router.add_api_route(
+    "/employees/{employee_id}/compensation-records",
+    record_compensation_change,
+    methods=["POST"],
+    response_model=CompensationChangeOut,
+    status_code=status.HTTP_201_CREATED,
+    include_in_schema=False,
+)
 
 
 @router.get(

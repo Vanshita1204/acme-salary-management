@@ -90,8 +90,13 @@ class EmployeeOut(ORMModel):
 
 
 class CompensationRecordIn(BaseModel):
-    """Country and currency aren't accepted: a record is written in the employee's
+    """A compensation change for one type (FR-4). Any change reason works with any
+    type ("correction" fixes a mistake); the effective date may be in the future.
+
+    Country and currency aren't accepted: a record is written in the employee's
     current country and currency (the DB trigger enforces the currency)."""
+
+    model_config = ConfigDict(extra="forbid")
 
     compensation_type_id: int
     change_reason_id: int
@@ -113,6 +118,12 @@ class CompensationRecordOut(ORMModel):
     note: str | None
     changed_by: str
     created_at: datetime
+
+
+class CompensationChangeOut(CompensationRecordOut):
+    # False while the record is future-dated (it becomes current on its date), or
+    # when a newer record of the same type is already current (a back-dated fix).
+    is_current: bool
 
 
 class DirectoryItem(BaseModel):

@@ -27,6 +27,7 @@ from app.domain.pagination import (
     reads_ascending,
 )
 from app.models import CompensationType, CurrentCompensation, Employee, ExchangeRate
+from app.services.compensation import promote_due_records
 from app.services.exchange_rates import latest_rates
 
 Sort = Literal["name", "hire_date", "compensation"]
@@ -155,6 +156,7 @@ def list_employees(session: Session, query: DirectoryQuery) -> DirectoryPage:
     direction = cursor.direction if cursor else None
     ascending = reads_ascending(query.order, direction)
 
+    promote_due_records(session)  # future-dated records whose date has arrived
     stmt, keys, parsers = sort_key(query)
     stmt = apply_filters(stmt, query)
     if cursor:
