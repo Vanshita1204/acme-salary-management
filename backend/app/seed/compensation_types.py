@@ -25,6 +25,7 @@ class TypeSpec(NamedTuple):
     )
     is_base_pay: bool
     name: str
+    counts_toward_total: bool = True  # part of total compensation (CTC)
 
 
 CATALOG: list[TypeSpec] = [
@@ -37,15 +38,40 @@ CATALOG: list[TypeSpec] = [
     TypeSpec("allowance", "housing", 1, False, "Housing Allowance"),
     TypeSpec("allowance", "transport", 1, False, "Transport Allowance"),
     TypeSpec("allowance", "meal", 1, False, "Meal Allowance"),
-    # Reimbursements: the amount is the employee's entitlement (cap) for the period,
-    # not individual expense claims — those belong to an expenses system.
+    # Reimbursements: the amount is the employee's entitlement (cap) for the period, not
+    # individual expense claims. Outside CTC by default; employers that package one into
+    # CTC use a type that counts (e.g. the "(CTC)" internet reimbursement).
     TypeSpec(
-        "reimbursement", "phone_internet", 1, False, "Phone & Internet Reimbursement"
+        "reimbursement",
+        "phone_internet",
+        1,
+        False,
+        "Phone & Internet Reimbursement",
+        counts_toward_total=False,
     ),
     TypeSpec(
-        "reimbursement", "learning", 12, False, "Learning & Development Reimbursement"
+        "reimbursement",
+        "phone_internet_ctc",
+        1,
+        False,
+        "Phone & Internet Reimbursement (CTC)",
     ),
-    TypeSpec("reimbursement", "wellness", 12, False, "Wellness Reimbursement"),
+    TypeSpec(
+        "reimbursement",
+        "learning",
+        12,
+        False,
+        "Learning & Development Reimbursement",
+        counts_toward_total=False,
+    ),
+    TypeSpec(
+        "reimbursement",
+        "wellness",
+        12,
+        False,
+        "Wellness Reimbursement",
+        counts_toward_total=False,
+    ),
 ]
 
 

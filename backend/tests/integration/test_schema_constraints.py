@@ -204,6 +204,12 @@ def test_only_one_base_pay_type_exists_globally(db, ref):
         db.flush()
 
 
+def test_base_pay_type_must_count_toward_total(db, ref):
+    ref["base_pay"].counts_toward_total = False
+    with pytest.raises(IntegrityError, match="chk_base_pay_counts_toward_total"):
+        db.flush()
+
+
 @pytest.mark.parametrize("period_months", [0, -3])
 def test_period_months_must_be_positive(db, period_months):
     db.add(

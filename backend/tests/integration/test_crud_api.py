@@ -145,6 +145,19 @@ def test_create_compensation_type_is_never_base_pay(client, catalog):
     assert created in client.get("/compensation-types").json()
 
 
+def test_compensation_type_counts_toward_total_by_default_and_can_opt_out(client):
+    def create(**extra):
+        body = {
+            "name": "Internet",
+            "category": unique("reimbursement"),
+            "period_months": 1,
+        }
+        return client.post("/compensation-types", json=body | extra).json()
+
+    assert create()["counts_toward_total"] is True
+    assert create(counts_toward_total=False)["counts_toward_total"] is False
+
+
 def test_compensation_type_rejects_is_base_pay_field(client):
     response = client.post(
         "/compensation-types",

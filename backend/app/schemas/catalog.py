@@ -48,6 +48,9 @@ class CompensationTypeIn(BaseModel):
     category: NonEmpty
     subtype: NonEmpty | None = None
     period_months: int = Field(gt=0, description="1 monthly, 3 quarterly, 12 annual, …")
+    counts_toward_total: bool = Field(
+        default=True, description="Include in total compensation (CTC)"
+    )
 
 
 class CompensationTypeOut(ORMModel):
@@ -57,6 +60,7 @@ class CompensationTypeOut(ORMModel):
     subtype: str | None
     period_months: int
     is_base_pay: bool
+    counts_toward_total: bool
     created_at: datetime
 
 

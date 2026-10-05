@@ -191,10 +191,12 @@ CREATE TABLE compensation_types (
     subtype        TEXT,               -- free text, optional — e.g. 'housing', 'performance'
     period_months  INTEGER NOT NULL CHECK (period_months > 0),  -- the amount's recurrence: 1 = monthly, 3 = quarterly, 6 = semi-annual, 12 = annual, etc.
     is_base_pay    BOOLEAN NOT NULL DEFAULT false,              -- marks the one type the "> 0" rule applies to
+    counts_toward_total BOOLEAN NOT NULL DEFAULT true,          -- part of total compensation (CTC)?
     name           TEXT    NOT NULL,   -- display label, e.g. 'Housing Allowance', 'Quarterly Bonus', 'Variable Pay (Max)'
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    UNIQUE (category, subtype)
+    UNIQUE (category, subtype),
+    CONSTRAINT chk_base_pay_counts_toward_total CHECK (NOT is_base_pay OR counts_toward_total)
 );
 
 -- at most one base-pay type, globally — see business-rules table
@@ -209,6 +211,7 @@ CREATE INDEX ix_comp_types_category ON compensation_types (category);
 - **`period_months`** — the number of months the recorded `amount` covers, so annualizing any type is one formula: `annual_amount = amount * 12 / period_months`. Monthly base salary → `period_months = 1`; quarterly bonus → `3`; annual equity grant → `12`. A pure function (`annualize(amount, period_months)`), unit-tested with no DB access per §7.
 - **`is_base_pay`** — marks the one type that gets the stricter "`amount` must be `> 0`" rule, instead of pattern-matching on `category`'s free text. `uq_one_base_pay_type` is a trick for "exactly one row total" rather than "one per company" — it's a unique index on the constant expression `(true)` filtered `WHERE is_base_pay`, so Postgres can only ever have one row where that expression and filter both hold.
 - `UNIQUE (category, subtype)` stops the same type being defined twice (e.g. two "Housing Allowance" rows).
+- **`counts_toward_total`** — whether the type is part of total compensation (CTC). Set per type because employers differ: one packages an internet reimbursement into CTC, another pays it outside. The catalog stays universal; an employer that includes it uses a type that counts (seeded: "Phone & Internet Reimbursement" outside CTC, "Phone & Internet Reimbursement (CTC)" inside). Base pay must count (`chk_base_pay_counts_toward_total`).
 
 ---
 
@@ -321,7 +324,7 @@ CREATE INDEX ix_current_comp_type ON current_compensation (compensation_type_id)
 - No `country` or `currency` columns here — both are read from `employees.current_country`/`employees.currency` instead. `country` is a safe drop (it's a label, doesn't affect `amount`). `currency` is only a safe drop because of the invariant below: nothing can leave a row's `amount` denominated in a currency other than the employee's current one.
 - **The invariant this relies on:** `employees.currency` only ever changes through a dedicated currency-change operation (not a normal single-type compensation edit), and that operation is one transaction that updates `employees.currency` *and* writes a new `compensation_records` row for every one of the employee's current types, in the new currency, at once. The UI for this is a form listing every current compensation type with an editable amount field (not an auto-computed conversion — see "Interpretive calls" below for why), submitted and committed together. Because every type is rewritten in the same transaction that changes the currency, there's never a window where `current_compensation` holds an amount in a currency other than `employees.currency` for that employee.
 - Refreshed by the service layer in the same transaction as inserting a new `compensation_records` row (ordinary edits and the currency-change operation both go through this), same future-dating/recompute-on-read behavior as before, scoped per type rather than globally per employee.
-- Total compensation is no longer a plain `SUM(amount)` — since `amount` is per-`period_months`, not necessarily annual, it's `SELECT SUM(amount * 12.0 / period_months) FROM current_compensation cc JOIN compensation_types ct ON ct.id = cc.compensation_type_id WHERE cc.employee_id = ?`, still computed, still never stored. This supersedes §2's "amounts are annual" assumption — a type's `amount` is whatever `period_months` says it is, and annualizing is this one multiply. The `ix_current_comp_type` index serves the §5 composition/grouping queries ("all current `bonus`-category amounts across employees"), which now need the same join to `compensation_types`, both for `category` and for `period_months`.
+- Total compensation is no longer a plain `SUM(amount)` — since `amount` is per-`period_months`, not necessarily annual, it's `SELECT SUM(amount * 12.0 / period_months) FROM current_compensation cc JOIN compensation_types ct ON ct.id = cc.compensation_type_id WHERE cc.employee_id = ? AND ct.counts_toward_total`, still computed, still never stored. This supersedes §2's "amounts are annual" assumption — a type's `amount` is whatever `period_months` says it is, and annualizing is this one multiply. The `ix_current_comp_type` index serves the §5 composition/grouping queries ("all current `bonus`-category amounts across employees"), which now need the same join to `compensation_types`, both for `category` and for `period_months`.
 - **Open trade-off, sharper than before:** sorting the FR-1 directory by total compensation used to be a single-row expression index; it's now a `SUM(...) GROUP BY employee_id` over a variable number of rows per employee, so it can't be served by one index at all. At 10k employees (≈5 type-rows each ⇒ ~50k rows) this aggregate is still cheap, but it's a real regression from the old design's indexed sort — if this becomes a bottleneck, the fix is a small denormalized `employee_totals(employee_id, total_amount)` table refreshed alongside `current_compensation`, not a redesign of this table.
 
 ---
@@ -355,6 +358,7 @@ CREATE INDEX ix_exchange_rates_latest ON exchange_rates (currency, rate_date DES
 | A change reason must exist (any reason is valid for any type) | `FOREIGN KEY (change_reason_id)` → `change_reasons (id)`; `UNIQUE (code)` on `change_reasons` |
 | Reasons the rules rely on (`new_hire`, `relocation`, `correction`) exist | seed smoke check (`check_change_reasons`) |
 | Exactly one base-pay type exists, globally | `UNIQUE` index on `compensation_types ((true)) WHERE is_base_pay` |
+| Base pay always counts toward total compensation | `CHECK (NOT is_base_pay OR counts_toward_total)` on `compensation_types` |
 | `period_months` must be a positive number of months | `CHECK (period_months > 0)` on `compensation_types` |
 | Termination date set iff status = terminated, never before hire date | same-row `CHECK` constraints on `employees` |
 | Employee email unique | `CITEXT UNIQUE` on `employees.email` |

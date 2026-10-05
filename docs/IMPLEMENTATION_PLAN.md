@@ -34,13 +34,13 @@ Three steps, in order — nothing in Phase 2 onward starts until all three are d
 Small, structural lookup data the app can't function without — not the 10,000-employee synthetic seed (that's Phase 3). Loaded by an idempotent script rather than a migration data step, so migrations stay schema-only: `python -m app.seed.reference` (run after `alembic upgrade head`; only inserts what's missing, safe to re-run).
 - `currencies` and `countries` (with `default_currency`): the **full** ISO 3166-1 / ISO 4217 lists, not a hand-picked subset — 248 countries, 149 currencies (exactly the set that is some country's legal tender). Sourced at seed time from third-party packages, not hand-maintained (`app/seed/iso_data.py`): pycountry for ISO codes and currency names, babel (Unicode CLDR) for English country names and each country's current legal-tender currency — ISO doesn't publish a country → currency mapping. Upgrading those packages is how the data gets updated. `CURRENCY_OVERRIDES` patches places where CLDR lags (currently Bulgaria → EUR, euro since 2026-01-01). Countries with no legal tender (Antarctica) are omitted.
 - `companies`: 100 synthetic companies generated with Faker (`python -m app.seed.companies [--count N] [--seed S]`, default 100 / seed 1204). Deterministic for a given seed, count and pinned Faker version, so re-running inserts nothing; covered by `tests/integration/test_companies_seed.py`. Separate command from `app.seed.reference` for now.
-- `compensation_types`: the starting universal catalog in `app/seed/compensation_types.py` (`python -m app.seed.compensation_types`; edit `CATALOG` and re-run to extend) — 12 types:
+- `compensation_types`: the starting universal catalog in `app/seed/compensation_types.py` (`python -m app.seed.compensation_types`; edit `CATALOG` and re-run to extend) — 13 types:
   - fixed: Base Pay (`is_base_pay = true`, monthly)
   - variable: Annual Variable Pay Target (12)
   - bonus: Quarterly Bonus (3), Annual Bonus (12), Retention Bonus (12)
   - equity: Annual Equity Grant RSU (12)
   - allowance: Housing, Transport, Meal (all monthly)
-  - reimbursement: Phone & Internet (1), Learning & Development (12), Wellness (12). The recorded amount is the employee's entitlement/cap for the period, not individual expense claims (those belong to an expenses system, out of scope).
+  - reimbursement: Phone & Internet (1, outside CTC), Phone & Internet (CTC) (1, counts toward total), Learning & Development (12, outside CTC), Wellness (12, outside CTC). Every other seeded type counts toward total. The recorded amount is the employee's entitlement/cap for the period, not individual expense claims (those belong to an expenses system, out of scope).
   - Seeded types are only a starting point — HR adds more from the UI (1.3 + Phase 13). Covered by `tests/integration/test_compensation_types_seed.py`.
 - `change_reasons`: one shared list, **not tied to compensation types** — any record of any type can use any reason (`app/seed/change_reasons.py`, `python -m app.seed.change_reasons`). 11 reasons: new hire, annual revision, promotion, market adjustment, role change, relocation, bonus payout, equity grant, retention award, policy change, correction. The smoke check requires `new_hire`, `relocation` and `correction`, which business rules look up by code. Covered by `tests/integration/test_change_reasons_seed.py`.
 - `exchange_rates`: **live rates, not fixtures** — `app.seed.reference` finishes by calling Phase 8's refresh (below) against the real provider. A provider outage doesn't fail the reference load; it just warns.
@@ -71,13 +71,27 @@ Minimal, business-rule-light REST endpoints over the models above — enough to 
   - **Deferred on purpose:** the initial base-pay record on employee create (Phase 6) and keeping `current_compensation` in step with new records (Phase 7) — 1.3 stays business-rule-light.
 - **Done when (verified):** every model can be created and read back through the API against the 1.2 reference data, and every DB rule comes back as a 4xx — `tests/integration/test_crud_api.py`, which loads the 1.2 seeds inside the test transaction. Also checked live: the read endpoints against the seeded dev database.
 
-## Phase 2 — Domain layer (pure functions, no DB/network)
-Lives under `backend/app/domain/`, unit-tested under `backend/tests/unit/`.
-- Compensation: `annualize(amount, period_months)` (= `amount * 12 / period_months`), total-compensation calc (sum of annualized current types — **open decision:** whether `reimbursement`-category types count toward total compensation, or are reported separately since they're expense entitlements rather than pay; decide before Phase 5's directory totals), percentage change between two records of the same type (correction-aware per §5 definitions).
-- Currency — **done early, with Phase 8's rate work** (`app/domain/currency.py`): `convert` / `cross_rate` through USD rates (non-USD → non-USD goes via USD, per FR-8), rounded half-even to cents; `rates_to_usd_from_usd_base` inverts the provider's units-per-USD quotes via `str()` so float noise doesn't leak into `Decimal`. Unit-tested in `tests/unit/test_currency.py`. Open: zero-decimal currencies (JPY, KRW, …) still round to cents — use ISO 4217 minor units when the UI formats amounts.
-- Analytics formulas: peer-group grouping (title, level, country), outlier threshold (80%/120% of peer median, peer groups ≥ 5), composition breakdown grouped by `compensation_types.category`.
-- CSV import validation rules (FR-5): required fields, email format/uniqueness-within-file, recognized company, supported currency, non-negative amounts, base-pay amount > 0, date validity — returns row/column/reason, doesn't touch the DB.
-- **Done when:** these modules have no `import` of SQLAlchemy session or an HTTP client; tests run with fixed exchange-rate fixtures, never live rates (§7 Testability); `annualize` is tested against monthly/quarterly/semi-annual/annual inputs.
+## Phase 2 — Domain layer (pure functions, no DB/network) — Done
+Lives under `backend/app/domain/`, unit-tested under `backend/tests/unit/` (no database, no network, fixed inputs only).
+- **Compensation** (`compensation.py`):
+  - `annualize(amount, period_months)` = `amount * 12 / period_months`.
+  - `total_compensation(components)`: the sum of annualized current components **that count toward total** (`compensation_types.counts_toward_total`). This settles the reimbursement question per type rather than per category, since employers differ on what goes into CTC — see `docs/DATABASE_DESIGN.md`.
+  - `percentage_change(previous, new)`: `None` when there's no base.
+  - `average_increase(changes)`: excludes corrections (§5) and changes across a currency switch (FR-7: cross-currency increases are deferred), via `counts_as_increase`.
+- **Currency** (`currency.py`, done early with Phase 8's rate work): `convert` / `cross_rate` through USD rates (non-USD → non-USD goes via USD, per FR-8), rounded half-even to cents. `rates_to_usd_from_usd_base` inverts the provider's units-per-USD quotes via `str()` so float noise doesn't leak into `Decimal`. Open: zero-decimal currencies (JPY, KRW, …) still round to cents — use ISO 4217 minor units when the UI formats amounts.
+- **Analytics** (`analytics.py`) — the reference definitions Phase 12's SQL is tested against:
+  - Peer groups: title + level + country.
+  - `find_outliers`: below `OUTLIER_LOW` (0.8) / above `OUTLIER_HIGH` (1.2) of the peer median, only for groups ≥ `MIN_PEER_GROUP_SIZE` (5); boundaries aren't outliers.
+  - `composition`: shares per open-ended category.
+- **CSV import validation** (`csv_import.py`, FR-5):
+  - `validate_import(header, records, ImportContext)`. The caller loads companies, countries, currencies and existing emails once, so the module never touches the DB.
+  - Template columns are `TEMPLATE_COLUMNS` — first and last name are separate columns, matching the employee model.
+  - Checks: missing header columns (row 1), the 10,000-row cap, required fields, email format (`email-validator`, no DNS lookup), email already existing or repeated within the file (pointing at the first row), unknown company (case-insensitive name), unknown country, unsupported currency, ISO dates, base pay > 0 with at most 2 decimals (thousands separators accepted).
+  - Every error has row/column/reason; reasons are module constants. The result is all-or-nothing: `ok` only when there are no errors at all.
+- **Done when (verified):**
+  - `tests/unit/test_domain_purity.py` parses every domain module and fails on any import of SQLAlchemy, psycopg, httpx, FastAPI or the app's DB/model/service layers.
+  - Tests use fixed exchange-rate fixtures, never live rates.
+  - `annualize` is tested for monthly/quarterly/semi-annual/annual (and 24-month) periods.
 
 ## Phase 3 — Seed script (10,000-employee synthetic dataset)
 Distinct from Phase 1.2's reference-data pre-population — this generates the large synthetic employee population on top of it.
@@ -96,7 +110,7 @@ Per `docs/SCALE_LAB.md` E1–E3, run at S (10k) and at least M (1M):
 
 ## Phase 5 — Employee Directory API (FR-1)
 - `GET /employees`: keyset pagination (next/previous), free-text search (name/email/code), filters (department, country, title, level, status, combinable), sort (name, hire date, compensation).
-- Reads current total compensation from the `CurrentCompensation` table (no per-request recomputation), converted to the selected reporting currency via Phase 2's currency module.
+- Reads current total compensation from the `CurrentCompensation` table (no per-request recomputation; only types with `counts_toward_total`), converted to the selected reporting currency via Phase 2's currency module.
 - Indexes on every filtered/sorted column (§7).
 - **Done when:** p95 latency on the 10k seed is under 500 ms (§1) for a representative mix of filter/search/sort combinations.
 
@@ -161,6 +175,7 @@ Each view: active employees only, current compensation, selected reporting curre
 - **Compensation types screen** (backed by 1.3's catalog endpoints): table of every type — name, category, subtype, payment period — plus an **"Add compensation type"** form:
   - Name, category and subtype as free text, with category suggesting existing values (e.g. `bonus`, `reimbursement`) to keep grouping consistent in the Phase 12 composition breakdown.
   - Payment period as a picker (Monthly = 1, Quarterly = 3, Semi-annual = 6, Annual = 12) with a "custom months" escape hatch, stored as `period_months`.
+  - "Counts toward total compensation (CTC)" toggle, on by default — e.g. off for an internet reimbursement the employer pays outside CTC.
   - No base-pay checkbox (there's exactly one, seeded).
   - Duplicate category/subtype and other validation errors shown inline; the new type appears immediately in the compensation-change form's type dropdown.
 - **Change reasons screen:** the shared list, with an "Add reason" form (code + label). The compensation-change form (Phase 7) offers every reason for every type, with "Correction" always available.

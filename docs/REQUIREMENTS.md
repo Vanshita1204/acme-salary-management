@@ -69,7 +69,7 @@ A single HR Manager (confirmed with Incubyte). Fluent in spreadsheets, not in SQ
 
 **Employee:** employee code (unique, system-generated), company, first and last name, email (unique), department, job title, job level, current country, current pay currency (independent of country), employment status (active / on leave / terminated), hire date, termination date (set exactly when status becomes terminated).
 
-**Compensation type:** a catalog entry describing one kind of pay component — category (e.g. fixed, variable, equity, allowance, bonus), subtype (e.g. housing, quarterly), payment period in months (1 = monthly, 12 = annual, etc.), whether it's the one base-pay type, and a display name. One universal catalog, shared by every employee at every company — not per-company, not per-employee.
+**Compensation type:** a catalog entry describing one kind of pay component — category (e.g. fixed, variable, equity, allowance, bonus), subtype (e.g. housing, quarterly), payment period in months (1 = monthly, 12 = annual, etc.), whether it's the one base-pay type, whether it counts toward total compensation (CTC), and a display name. One universal catalog, shared by every employee at every company — not per-company, not per-employee.
 
 **Change reason:** why a compensation record was written (e.g. new hire, promotion, bonus payout, relocation, correction). One shared list that any record can use regardless of its compensation type; HR can add reasons. "New hire", "relocation" and "correction" always exist because the rules below depend on them.
 
@@ -81,7 +81,7 @@ Each record stores its own country and currency, so a relocation or currency cha
 
 **Exchange rate:** currency, rate against USD, rate date, source, fetched at.
 
-Derived values (never stored): a compensation type's annualized amount = amount × 12 ÷ payment period (months); total compensation = the sum of every one of an employee's current compensation types' annualized amounts.
+Derived values (never stored): a compensation type's annualized amount = amount × 12 ÷ payment period (months); total compensation (CTC) = the sum of the annualized amounts of an employee's current compensation types that count toward total. Whether a type counts is set per type, because employers differ — some include e.g. an internet reimbursement in CTC, others pay it outside CTC. Base pay always counts. Types that don't count still appear in the employee's breakdown and the composition view.
 
 ## 4. Functional Requirements
 
@@ -108,7 +108,7 @@ Derived values (never stored): a compensation type's annualized amount = amount 
 - Future effective dates are allowed (e.g. an approved raise from next month) and become current on that date.
 
 ### FR-5 CSV Import
-- Downloadable template with one row per employee: name, email, company, department, title, level, country, hire date, currency, base pay amount. Only the base-pay compensation type is set at import; other types (bonus, allowances, equity, etc.) are added afterward through FR-4.
+- Downloadable template with one row per employee: first name, last name, email, company, department, title, level, country, hire date, currency, base pay amount. Only the base-pay compensation type is set at import; other types (bonus, allowances, equity, etc.) are added afterward through FR-4.
 - Two steps: **validate and preview**, then **confirm**. The whole file is validated first; row-level errors are shown with row number, column, and reason.
 - **All-or-nothing:** if any row is invalid, nothing is saved. HR fixes the file and re-uploads. This avoids a half-imported state that is hard to reconcile.
 - Rejected when: a required field is missing; the email is malformed, already exists, or is duplicated within the file; the company or currency is unrecognized; an amount is negative or the base pay amount is zero; a date is invalid.
