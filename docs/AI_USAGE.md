@@ -184,6 +184,49 @@ Instructions given to the coding agent are committed in _[e.g. `CLAUDE.md`]_.
 - **Design call surfaced:** "sort by compensation" across employees paid in different currencies can't compare raw totals. The sort compares USD-equivalent totals at the latest stored rates, in SQL, which gives the same order for every reporting currency.
 - **Bug caught in review:** a cursor that decoded but held an unparseable value would have returned a 500. Fixed to a 400, with tests for tampered and mismatched cursors. The directory met its acceptance target: p95 42 ms at 10k (target < 500 ms).
 
+**31. Future-dated raises: "check on every read" questioned, then a daily worker**
+- **AI output:** For FR-4, the plan's "recompute-on-read" was built literally. Every read of current pay (directory, profile) first switches future-dated records whose date has arrived. A partial index over records saved with a future date keeps the check small.
+- **Prompt:** "if i run an aggregation, do i check every time" — e.g. top-paid in one role across 10,000 employees.
+- **AI explanation:** The check isn't per employee. It's one query over the small index of pending future-dated records, ~2 ms on the 10k seed whether the aggregation touches 10 employees or 10,000. Effective dates are whole days, so once a day is enough.
+- **Decision:** I was fine adding a worker. Phase 8's daily job now refreshes exchange rates and switches due records. The read-time check stays as a safety net for a late or missed run; with the job running it finds nothing.
+- **Lesson:** "Recompute on read" in a plan should state its cost and frequency, or it reads as "recompute the world on every request."
+
+**32. Bugs the tests caught in Phase 7**
+- **Row count:** the promotion upsert's `rowcount` came back as -1 through SQLAlchemy/psycopg. Switched to counting `RETURNING` rows.
+- **Global effects in tests:** promotion is company-wide, so an assertion like "exactly one record promoted" failed once the dev database held another pending raise. Tests now assert on their own employee's pay.
+- **Commit placement:** saving promotions with `commit()` before building the profile response would expire every loaded ORM object and reload each history row with its own query. The commit moved after the response is built.
+
+**33. No table for department, title or level**
+- **Prompt:** "why is there no table for role"
+- **AI output:** Admitted there was no recorded reason. These were free text since Phase 1, which contradicts REQUIREMENTS §1 ("inconsistent department or title names go uncaught"). "Software Engineer" and "software engineer" would split grouped statistics and outlier peer groups, and levels sorted as text (`L10` before `L2`).
+- **Decision:** Inserted as Phase 7A (not renumbered, since later phase numbers are referenced throughout code and docs), before CSV import and analytics, which both depend on it:
+  - case-insensitive unique lookup tables;
+  - titles shared across departments, like the compensation-type catalog;
+  - levels with a `rank` so they sort correctly.
+- **Verification:**
+  - The migration ran in place on the 10k dev database; every employee's values matched a pre-migration export row by row, and downgrading restored identical text.
+  - A throwaway database proved case variants (`" engineering "`, `l2`) merge and `L10` ranks after `L2`.
+  - The regenerated seed was identical to the pre-7A one.
+- **Lesson:** "Why isn't X modelled?" deserves a straight "it should be" when the requirements already say so, not a rationalisation.
+
+**34. A latency number that looked like a regression**
+- **AI output:** After 7A, the directory benchmark showed p95 73.5 ms against the 42 ms recorded in Phase 5.
+- **Verification:** Instead of attributing the gap to 7A, the agent ran the pre-7A code on the same machine and data: 65 ms before, 70 ms after. Most of the gap was the machine; 7A costs ~5–10%, still far under the 500 ms target.
+- **Decision:** Kept the original Phase 5 result file and recorded the new before/after pair separately, so measurements from different machines aren't mixed.
+
+**35. Phase 8: a throttle that would have skipped days**
+- **AI caught:** The refresh endpoint skips if rates were fetched within 24 hours. A job scheduled for 00:10 daily would skip whenever yesterday's run finished a few seconds later in the day, leaving rates a day stale. The job now refetches after 1 hour (only to stop a crash-looping worker hammering the provider); the API keeps 24 hours.
+- **Gap closed:** an unknown reporting currency used to return empty conversions silently; it's now a 422. A supported currency with no rate still returns `null` rather than failing the page.
+- **Verification limit:** the live provider was blocked from the build environment (403). That exercised the failure path for real (rates kept, records still promoted, non-zero exit), but a successful live fetch is covered only by tests with a faked provider.
+
+**36. Phase 9: CSV import**
+- **Decision:** confirm validates the file again against the current database instead of trusting the earlier preview. A test adds one of the file's employees by hand between preview and confirm, and the confirm reports that row.
+- **AI output:**
+  - Inserts are set-based (employees, records, current pay in three statements): a 10,000-row file validates in 1.1 s and confirms in 4.2 s.
+  - Existing-email checks look up only the file's own emails, so they don't grow with the employee table.
+- **AI caught:** an early version stopped reading after 10,001 rows to save work, which would have made the "file has N rows" error report the wrong N. Reading is bounded by the 10 MB upload limit instead.
+- **Verification:** the plan's acceptance case (a file with one bad row saves nothing and reports the row, column and reason) is a test, along with a rollback test that fails after employee rows were already inserted.
+
 ---
 
 ## Entry Template
