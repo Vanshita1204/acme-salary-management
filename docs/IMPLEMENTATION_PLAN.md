@@ -44,7 +44,7 @@ Small, structural lookup data the app can't function without — not the 10,000-
   - Seeded types are only a starting point — HR adds more from the UI (1.3 + Phase 13). Covered by `tests/integration/test_compensation_types_seed.py`.
 - `change_reasons`: one shared list, **not tied to compensation types** — any record of any type can use any reason (`app/seed/change_reasons.py`, `python -m app.seed.change_reasons`). 11 reasons: new hire, annual revision, promotion, market adjustment, role change, relocation, bonus payout, equity grant, retention award, policy change, correction. The smoke check requires `new_hire`, `relocation` and `correction`, which business rules look up by code. Covered by `tests/integration/test_change_reasons_seed.py`.
 - `exchange_rates`: **live rates, not fixtures** — `app.seed.reference` finishes by calling Phase 8's refresh (below) against the real provider. A provider outage doesn't fail the reference load; it just warns.
-- **Seeding order:** `alembic upgrade head`, then `python -m app.seed.reference` (currencies, countries, live rates), `python -m app.seed.companies`, `python -m app.seed.compensation_types`, `python -m app.seed.change_reasons`. Each is idempotent.
+- **Seeding order:** `alembic upgrade head`, then `python -m app.seed.reference` (currencies, countries, live rates), `python -m app.seed.companies`, `python -m app.seed.compensation_types`, `python -m app.seed.change_reasons`, `python -m app.seed.org_structure` (Phase 7A). Each is idempotent.
 - **Done when (verified):** after 1.1's migrations and the loads above, every lookup table is populated and the smoke checks pass — every country's `default_currency` resolves (`check_reference_data`), exactly one base-pay type exists (`check_compensation_types`), and the reasons the rules rely on exist (`check_change_reasons`). Each loader is also tested to insert nothing on a second run.
 
 ### 1.3 Basic CRUD — Done
@@ -170,15 +170,65 @@ Per `docs/SCALE_LAB.md` E1–E3, run at S (10k) and M (1M); full results in **`d
   - the employee is already terminated (`409`)
 
   Terminated employees stay searchable in the directory.
-- **Current compensation:** `app/services/compensation.py` `append_record` is now the single write path for records, also used by `POST /employees/{id}/compensation-records`. A record moves the `(employee, type)` pointer only if it's in effect today and newer than the current one — a back-dated correction doesn't displace a newer record; a future-dated record is stored but not yet current (resolving those when their date arrives is Phase 7).
+- **Current compensation:** `app/services/compensation.py` `append_record` is now the single write path for records, also used by `POST /employees/{id}/compensation-records`. A record moves the `(employee, type)` pointer only if it's in effect today and newer than the current one — a back-dated correction doesn't displace a newer record; a future-dated record is stored but not yet current (resolved on read since Phase 7).
 - Business-rule errors are `ServiceError(Problem.NOT_FOUND|CONFLICT|INVALID, message)`, with message constants in `app/services/employees.py`, mapped to 404/409/422 by one exception handler in `app/main.py`.
 - **Done when (verified):** `tests/integration/test_employee_lifecycle_api.py` (32 tests) — editing can't change compensation, creating can't skip base pay, and termination without a reachable date is rejected; plus profile totals, % change, and current-pointer behavior. The Phase 1.3 CRUD tests were updated to the new create contract. Checked live on a seeded employee's profile.
 
-## Phase 7 — Compensation Change (FR-4)
+## Phase 7 — Compensation Change (FR-4) — Done
 - `POST /employees/{id}/compensation`: appends a record for one `compensation_type_id` with any change reason from the shared list (incl. "correction"), updates `CurrentCompensation` for that type if the new record's effective date is today-or-past and newer than the current pointer for that type.
 - Future-dated records: stored but don't move the current pointer until their date arrives — needs a resolution strategy (recompute-on-read for "is this now current" vs. a scheduled job); pick the simplest that matches §7's no-background-jobs-at-10k stance (recompute-on-read).
 - Validation: effective date ≥ hire date (§6); change reason must exist (enforced by the FK, but surface a clean 4xx before hitting the DB error).
-- **Done when:** a future-dated raise doesn't affect current analytics until its date, a correction doesn't alter average-increase calculations (§5 definitions), and submitting a nonexistent reason is rejected with a clear error.
+- **As built:**
+  - `app/services/compensation.py` `record_change` validates, then goes through `append_record` (still the single write path). Body: `compensation_type_id`, `change_reason_id`, `effective_date`, `amount`, `changed_by`, optional `note`; country/currency are rejected (`extra="forbid"`) — records always take the employee's current ones. The response is the record plus `is_current` (`false` while future-dated, or for a back-dated correction when a newer record is current).
+  - Checked before the database, with the same wording the DB layer uses so a rule reads the same wherever it's caught: employee exists (`404`); compensation type and change reason exist; effective date ≥ hire date; base pay > 0 (other types ≥ 0, by schema); for a terminated employee, effective date ≤ termination date (a correction from while they were employed is still allowed). All `422`, nothing written.
+  - The Phase 1.3 `POST /employees/{id}/compensation-records` path is kept (hidden from the schema) and runs the same handler.
+  - **Future-dated records — recompute-on-read:** `promote_due_records` runs at the start of every current-compensation read (directory, profile; Phases 10/12 must call it too). One upsert moves each (employee, type) pointer to its newest record that is now due and newer than what's current. Candidates come from a new partial index (`0010_future_dated_records`: records whose `effective_date` is after their UTC creation date), and already-current or superseded ones are filtered out before the upsert, so when nothing is due it's a no-op read — ~2 ms median on the 10k seed. The GET endpoints commit after building their response, so a promotion is persisted once rather than recomputed on every read.
+- **Done when (verified):** `tests/integration/test_compensation_change_api.py` (23 tests): a future-dated raise leaves profile and directory totals unchanged the day before and moves them on its date (clock injected); several pending records promote the newest due one and leave later ones pending; promotion never displaces a newer current record; a back-dated correction is stored but not current; corrections drop out of `average_increase`; an unknown reason/type, pre-hire date, zero base pay, or post-termination date is a clear `422` that writes nothing. `alembic check` clean, `downgrade base`/`upgrade head` round-trips, `EXPLAIN` shows the partial index used. Checked live on the seeded 10k database.
+
+## Phase 7A — Departments, Job Titles and Levels as reference data — Done
+Found during Phase 7: `employees.department`, `.job_title` and `.job_level` are free text. Nothing stops "Software Engineer", "software engineer" and "SW Engineer" from being three different roles, which is the exact problem REQUIREMENTS §1 lists ("inconsistent department or title names go uncaught"). It also splits every grouping that keys off them: grouped statistics, role-by-country, and the title + level + country peer groups behind outlier detection. Levels sort as text, so `L10` would land between `L1` and `L2`. Inserted as 7A, not renumbered, because later phase numbers are referenced throughout code and docs; it must land before Phase 9 (import validates against these lists) and Phase 12 (groups by them).
+
+- **Tables** (migration `0011`), lookup data like `compensation_types` and `change_reasons`:
+  - `departments (id, name CITEXT UNIQUE, created_at)`.
+  - `job_titles (id, name CITEXT UNIQUE, created_at)` — **universal, not tied to a department**, like the compensation-type catalog: "Analyst" is a real title in Finance and in Operations, and a department link would force duplicates or block moves. Revisit if HR wants titles scoped per department.
+  - `job_levels (id, code CITEXT UNIQUE, label, rank INT UNIQUE, created_at)` — `rank` gives levels a real order for sorting, filters like "L4 and above", and analytics; `code` is what HR sees (`L1`…`L7`).
+  - `CITEXT` + `UNIQUE` makes case-variant duplicates impossible at the DB, matching how `employees.email` works; names are trimmed in the API before insert.
+- **Employees:** `department_id`, `job_title_id`, `job_level_id` — `NOT NULL` FKs replacing the three text columns, each indexed (replacing `ix_employees_department/_title/_level`).
+  - Migration backfills from existing data: insert the distinct trimmed values into each lookup table, set the FKs by case-insensitive match, then drop the text columns. Existing levels get `rank` from their numeric suffix. Downgrade restores the text columns from the joins. Dev databases keep their data — no reseed needed.
+- **API** (`app/api/`, same contract as 1.3's catalog endpoints, exposed to the Phase 13 HR UI):
+  - `GET/POST /departments`, `GET/POST /job-titles`, `GET/POST /job-levels` plus `GET /…/{id}`. Duplicate name/code/rank → `409` via `db_errors`.
+  - No delete: employees and history point at them. Renaming is safe (it's a label, nothing numeric changes), so `PATCH` for name/label is allowed; retiring an entry (hidden from new-employee forms, kept for existing employees) is a later addition if needed.
+- **Employee create/edit (Phase 6):** take `department_id`, `job_title_id`, `job_level_id`; unknown id → `422` checked before the DB (same pattern as Phase 7's validation). Responses (`EmployeeOut`, profile, directory items) return both the id and the name/code, so clients don't need a second lookup.
+- **Directory (Phase 5):**
+  - Filters take ids (`?department_id=3&department_id=5`, repeatable for OR); `job_level` additionally accepts `min_level_rank`/`max_level_rank`.
+  - Search (`q`) is unchanged (name/email/code). Re-run `scale_lab.directory_latency` on the 10k seed — the extra joins are to three tiny tables, so p95 should stay well under the 500 ms target; record the number.
+- **Seeds:**
+  - `python -m app.seed.org_structure` loads the departments, titles and levels the employee seed uses (moved out of `app/seed/employees.py` constants into one catalog module), idempotent like the other 1.2 loaders, with a smoke check that every seeded level has a unique rank.
+  - `app.seed.employees` looks ids up by name and writes the FK columns (COPY path included); fails with a clear message if `org_structure` hasn't run.
+- **Downstream phases, updated to match:**
+  - Phase 9 (CSV import): the template keeps human-readable department/title/level columns; `ImportContext` gets the known names, and an unknown one is a row error ("unknown job title") — the import never creates new reference rows implicitly. Matching is case-insensitive and trims whitespace.
+  - Phase 12 (analytics): group by ids, label by name, order levels by `rank`; peer groups become `(job_title_id, job_level_id, country)` — `app/domain/analytics.py` keeps working on plain values, the SQL just feeds it ids.
+  - Phase 13 (frontend): dropdowns instead of free-text inputs, plus small "Add department / title / level" screens alongside the compensation-type and change-reason ones.
+- **Out of scope, noted:** title/level changes aren't dated — a promotion overwrites `employees.job_level`, so "what level was this employee at in 2023" can't be answered, and the change report can't attribute a raise to a promotion except via the `promotion` change reason. A dated `employee_role_history` (or role columns on compensation records) is a candidate for a later phase; this phase only fixes consistency.
+- **As built** (differences from the plan above in bold):
+  - Models in `app/models/org.py`; `Employee` loads its three lookups eagerly and exposes `department`, `job_title` (names) and `job_level` (code) as read-only properties, so `EmployeeOut`, profile and directory items return each **id and its name** — the response field names `department`/`job_title`/`job_level` are unchanged, now as display values.
+  - Migration `0011_org_structure`: ranks are assigned by the code's number, then alphabetically (`L2` before `L10`; codes without a number last); labels follow the seed's rule (`L3` → `Level 3`). Case/whitespace variants merge into one row.
+  - Routers in `app/api/org.py`: `GET/POST /departments`, `/job-titles`, `/job-levels`, `GET /…/{id}`, and `PATCH /…/{id}` (rename; levels can also be re-labelled and re-ranked). `DELETE` is `405`. Names are trimmed.
+  - `app/services/employees.py` `check_org_references` rejects unknown ids on create and edit before the DB, with the same wording as the FK message (`department does not exist`, …). The old free-text fields are rejected (`extra="forbid"`).
+  - Directory: `department_id`, `job_title_id`, `job_level_id` (repeatable), `min_level_rank`/`max_level_rank`, and **a new `sort=level`** (rank, then name; keyset-paged like the other sorts).
+  - Seed: `app/seed/org_structure.py` (`DEPARTMENT_TITLES`, `LEVEL_CODES`) is the source of the names; **`app/seed/employees.py` keeps only the pay model** (`DEPARTMENT_PAY`, `LEVELS` weights/multipliers), with a unit test that both cover exactly the same departments and levels. Same RNG sequence as before, so the seed output is unchanged.
+  - `app/domain/csv_import.py` already resolves department/title/level names (case-insensitive) to ids and reports `unknown department` / `unknown job title` / `unknown job level` per row — Phase 9 only has to load the lists into `ImportContext`.
+  - Scale Lab: lab databases run `org_structure`; `directory_latency` resolves names to ids and adds two level requests; `e2_pagination` reads the id columns.
+- **Verified:**
+  - 308 tests pass on both the migrated 10k database and a fresh one. New: `test_org_structure_api.py`, `test_org_structure_seed.py`, constraint tests in `test_schema_constraints.py` (FKs, case-insensitive uniqueness, unique code/rank), directory filter/sort tests, CSV unit tests.
+  - Migrated the seeded 10k dev database in place: all 10,000 employees keep identical department/title/level values (compared row by row against a pre-migration export); `downgrade` restores identical text columns; `alembic check` clean. A throwaway database with `" engineering "` / `"Engineering"` / `l2` / `L10` confirmed variants merge and `L10` ranks after `L2`.
+  - Fresh database: `app.seed.employees` without `org_structure` fails listing what's missing; with it, the 10k seed is row-for-row identical to the pre-7A seed.
+  - Directory latency re-measured: p95 70–73 ms vs 65 ms before 7A on the same machine and data (target < 500 ms) — see `docs/PERFORMANCE.md`.
+- **Done when:**
+  - Creating or editing an employee with an unknown department/title/level is a `422`; inserting a case-variant duplicate name (`"engineering"` vs `"Engineering"`) is a `409`, tested at both the API and the DB constraint (`tests/integration/test_schema_constraints.py`).
+  - The migration upgrades a seeded 10k dev database in place — same employee count, every employee's department/title/level name unchanged — and round-trips through downgrade; `alembic check` clean.
+  - Directory filters by id and level-rank range are tested; directory latency on the 10k seed is re-measured and stays under target.
+  - Levels sort by rank (`L2` before `L10`) in the directory and the level list.
 
 ## Phase 8 — Exchange Rates (FR-8)
 **Partly done early** (pulled forward so 1.2 could load live rates instead of fixtures):
@@ -196,7 +246,7 @@ Per `docs/SCALE_LAB.md` E1–E3, run at S (10k) and M (1M); full results in **`d
 
 ## Phase 9 — CSV Import (FR-5)
 - Template download endpoint. Columns: name, email, company, department, title, level, country, hire date, currency, base pay amount — the base-pay type only; other compensation types are added afterward through Phase 7, not at import.
-- `POST /import/validate`: full-file validation via Phase 2's rules, returns per-row errors; nothing persisted.
+- `POST /import/validate`: full-file validation via Phase 2's rules, returns per-row errors; nothing persisted. Department, title and level must match Phase 7A's reference lists (case-insensitive); unknown values are row errors.
 - `POST /import/confirm`: re-validates and inserts all-or-nothing in one transaction, writing each employee's row plus one base-pay compensation record with reason "new hire" (reject silently-stale previews — re-validate against current DB state, e.g. emails created since the preview).
 - 10,000-row cap enforced before validation runs.
 - **Done when:** a file with one bad row (of many) results in zero rows saved, with the bad row's number/column/reason reported.
@@ -215,7 +265,7 @@ Two distinct operations, both built here:
 ## Phase 12 — Pay Insights / Analytics (§5)
 Each view: active employees only, current compensation, selected reporting currency, respects directory filters, shows rates-as-of date.
 - Summary cards + cost breakdown (overall/country/department).
-- Grouped statistics (avg/median/min/max by department, country, title, level) via SQL `percentile_cont`.
+- Grouped statistics (avg/median/min/max by department, country, title, level) via SQL `percentile_cont`. Grouped by Phase 7A's ids, levels ordered by `rank`.
 - Role-by-country comparison.
 - Histogram of pay distribution.
 - Outlier list (peer-group logic from Phase 2, groups ≥ 5 only).

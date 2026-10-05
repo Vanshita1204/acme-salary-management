@@ -14,7 +14,7 @@ from typing import Literal
 
 from sqlalchemy import ColumnElement, Select, String, cast, func, or_, select, tuple_
 from sqlalchemy.dialects.postgresql import distinct_on
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.domain.currency import MissingRateError, convert
 from app.domain.pagination import (
@@ -26,10 +26,17 @@ from app.domain.pagination import (
     encode_cursor,
     reads_ascending,
 )
-from app.models import CompensationType, CurrentCompensation, Employee, ExchangeRate
+from app.models import (
+    CompensationType,
+    CurrentCompensation,
+    Employee,
+    ExchangeRate,
+    JobLevel,
+)
+from app.services.compensation import promote_due_records
 from app.services.exchange_rates import latest_rates
 
-Sort = Literal["name", "hire_date", "compensation"]
+Sort = Literal["name", "hire_date", "level", "compensation"]
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
 NO_TOTAL = -1  # sort key for employees with no compensation yet: last when descending
@@ -38,10 +45,12 @@ NO_TOTAL = -1  # sort key for employees with no compensation yet: last when desc
 @dataclass(frozen=True)
 class DirectoryQuery:
     q: str | None = None
-    departments: list[str] = field(default_factory=list)
+    department_ids: list[int] = field(default_factory=list)
     countries: list[str] = field(default_factory=list)
-    job_titles: list[str] = field(default_factory=list)
-    job_levels: list[str] = field(default_factory=list)
+    job_title_ids: list[int] = field(default_factory=list)
+    job_level_ids: list[int] = field(default_factory=list)
+    min_level_rank: int | None = None  # inclusive, by job_levels.rank
+    max_level_rank: int | None = None
     statuses: list[str] = field(default_factory=list)
     sort: Sort = "name"
     order: Order = "asc"
@@ -111,14 +120,21 @@ def apply_filters(stmt: Select, query: DirectoryQuery) -> Select:
             )
         )
     for column, values in (
-        (Employee.department, query.departments),
+        (Employee.department_id, query.department_ids),
         (Employee.current_country, [c.upper() for c in query.countries]),
-        (Employee.job_title, query.job_titles),
-        (Employee.job_level, query.job_levels),
+        (Employee.job_title_id, query.job_title_ids),
+        (Employee.job_level_id, query.job_level_ids),
         (Employee.status, query.statuses),
     ):
         if values:
             stmt = stmt.where(column.in_(values))
+    if query.min_level_rank is not None or query.max_level_rank is not None:
+        levels = select(JobLevel.id)
+        if query.min_level_rank is not None:
+            levels = levels.where(JobLevel.rank >= query.min_level_rank)
+        if query.max_level_rank is not None:
+            levels = levels.where(JobLevel.rank <= query.max_level_rank)
+        stmt = stmt.where(Employee.job_level_id.in_(levels))
     return stmt
 
 
@@ -135,6 +151,17 @@ def sort_key(query: DirectoryQuery) -> tuple[Select, list[ColumnElement], list]:
     elif query.sort == "hire_date":
         keys = [Employee.hire_date, Employee.id]
         parsers = [date.fromisoformat, int]
+    elif query.sort == "level":
+        # By seniority (job_levels.rank, so L2 before L10), then name.
+        level = aliased(JobLevel)
+        stmt = stmt.join(level, level.id == Employee.job_level_id)
+        keys = [
+            level.rank,
+            func.lower(Employee.last_name),
+            func.lower(Employee.first_name),
+            Employee.id,
+        ]
+        parsers = [int, str, str, int]
     else:
         totals = annual_totals().subquery()
         rates = latest_rate_rows().subquery()
@@ -155,6 +182,7 @@ def list_employees(session: Session, query: DirectoryQuery) -> DirectoryPage:
     direction = cursor.direction if cursor else None
     ascending = reads_ascending(query.order, direction)
 
+    promote_due_records(session)  # future-dated records whose date has arrived
     stmt, keys, parsers = sort_key(query)
     stmt = apply_filters(stmt, query)
     if cursor:

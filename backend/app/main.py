@@ -7,6 +7,7 @@ from app.api import (
     compensation_types,
     employees,
     exchange_rates,
+    org,
     reference,
 )
 from app.services.errors import ServiceError
@@ -29,6 +30,8 @@ for module in (
     exchange_rates,
 ):
     app.include_router(module.router)
+for router in (org.departments, org.job_titles, org.job_levels):
+    app.include_router(router)
 
 
 @app.get("/health")

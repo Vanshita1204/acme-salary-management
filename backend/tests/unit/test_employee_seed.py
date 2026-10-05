@@ -7,6 +7,8 @@ import pytest
 from app.seed import iso_data
 from app.seed.employees import (
     COUNTRIES,
+    DEPARTMENT_PAY,
+    LEVELS,
     REASON_CODES,
     TYPE_KEYS,
     Catalog,
@@ -15,6 +17,7 @@ from app.seed.employees import (
     ascii_slug,
     quarter_ends,
 )
+from app.seed.org_structure import DEPARTMENT_TITLES, JOB_TITLES, LEVEL_CODES
 
 AS_OF = date(2026, 10, 1)
 CATALOG = Catalog(
@@ -22,6 +25,9 @@ CATALOG = Catalog(
     currencies={c: iso_data.countries()[c][1] for c in COUNTRIES},
     types={key: i for i, key in enumerate(TYPE_KEYS, start=1)},
     reasons={code: i for i, code in enumerate(REASON_CODES, start=1)},
+    departments={n: i for i, n in enumerate(DEPARTMENT_TITLES, start=1)},
+    job_titles={n: i for i, n in enumerate(JOB_TITLES, start=1)},
+    job_levels={c: i for i, c in enumerate(LEVEL_CODES, start=1)},
 )
 BASE_TYPE = CATALOG.types["base"]
 REASON_BY_ID = {v: k for k, v in CATALOG.reasons.items()}
@@ -104,3 +110,16 @@ def test_ascii_slug():
     assert ascii_slug("Grégoire") == "gregoire"
     assert ascii_slug("O'Brien-Smith") == "obriensmith"
     assert ascii_slug("岩田") == "employee"
+
+
+def test_pay_model_covers_exactly_the_org_structure():
+    assert list(DEPARTMENT_PAY) == list(DEPARTMENT_TITLES)
+    assert list(LEVELS) == LEVEL_CODES
+
+
+def test_employee_rows_reference_org_structure_ids(sample):
+    rows, _ = sample
+    for row in rows:
+        assert row["department_id"] in CATALOG.departments.values()
+        assert row["job_title_id"] in CATALOG.job_titles.values()
+        assert row["job_level_id"] in CATALOG.job_levels.values()

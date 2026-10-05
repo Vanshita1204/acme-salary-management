@@ -21,14 +21,17 @@ from app.models import (
     CompensationType,
     Country,
     Currency,
+    Department,
     Employee,
+    JobLevel,
+    JobTitle,
 )
 
 HIRE_DATE = date(2024, 1, 15)
 
 
 @pytest.fixture
-def ref(db: Session) -> dict:
+def ref(db: Session, org: dict) -> dict:
     db.add_all(
         [
             Currency(code="XTS", name="Test currency"),
@@ -71,6 +74,7 @@ def ref(db: Session) -> dict:
         "base_pay": base_pay,
         "bonus": bonus,
         "reason": reason,
+        "role": org["role"],
     }
 
 
@@ -80,9 +84,7 @@ def make_employee(db: Session, ref: dict, **overrides) -> Employee:
         "first_name": "Ada",
         "last_name": "Lovelace",
         "email": f"{uuid.uuid4()}@example.com",
-        "department": "Engineering",
-        "job_title": "Engineer",
-        "job_level": "L3",
+        **ref["role"],
         "current_country": "XA",
         "currency": "XTS",
         "status": "active",
@@ -298,3 +300,47 @@ def test_compensation_records_cannot_be_deleted(db, ref):
         db.execute(
             text("DELETE FROM compensation_records WHERE id = :id"), {"id": record.id}
         )
+
+
+# --- org structure (Phase 7A) ---
+
+
+@pytest.mark.parametrize(
+    ("field", "constraint"),
+    [
+        ("department_id", "employees_department_id_fkey"),
+        ("job_title_id", "employees_job_title_id_fkey"),
+        ("job_level_id", "employees_job_level_id_fkey"),
+    ],
+)
+def test_employee_org_references_must_exist(db, ref, field, constraint):
+    with pytest.raises(IntegrityError, match=constraint):
+        make_employee(db, ref, **{field: -1})
+
+
+@pytest.mark.parametrize(
+    ("model", "column", "constraint"),
+    [
+        (Department, "name", "departments_name_key"),
+        (JobTitle, "name", "job_titles_name_key"),
+    ],
+)
+def test_org_names_are_unique_case_insensitively(db, model, column, constraint):
+    name = f"Pytest {uuid.uuid4().hex[:8]}"
+    db.add(model(**{column: name}))
+    db.flush()
+    with pytest.raises(IntegrityError, match=constraint):
+        db.add(model(**{column: name.lower()}))
+        db.flush()
+
+
+def test_job_level_codes_and_ranks_are_unique(db):
+    code, rank = f"pytest-{uuid.uuid4().hex[:8]}", 2_000_000 + uuid.uuid4().int % 10**6
+    db.add(JobLevel(code=code, label="t", rank=rank))
+    db.flush()
+    with db.begin_nested(), pytest.raises(IntegrityError, match="job_levels_code_key"):
+        db.add(JobLevel(code=code.upper(), label="t", rank=rank + 1))
+        db.flush()
+    with pytest.raises(IntegrityError, match="job_levels_rank_key"):
+        db.add(JobLevel(code=f"{code}-2", label="t", rank=rank))
+        db.flush()

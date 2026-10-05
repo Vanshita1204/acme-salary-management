@@ -29,7 +29,7 @@ HIRE = "2024-01-15"
 
 
 @pytest.fixture
-def catalog(db):
+def catalog(db, org):
     load_reference_data(db)
     load_compensation_types(db)
     load_change_reasons(db)
@@ -49,6 +49,8 @@ def catalog(db):
         "bonus": types[("bonus", "annual")],
         "wellness": types[("reimbursement", "wellness")],  # outside CTC
         "reasons": {r.code: r.id for r in db.scalars(select(ChangeReason))},
+        "role": org["role"],
+        "org": org,
     }
 
 
@@ -58,9 +60,7 @@ def new_employee(catalog, **overrides) -> dict:
         "first_name": "Ada",
         "last_name": "Lovelace",
         "email": f"{uuid.uuid4().hex[:10]}@pytest.example",
-        "department": "Engineering",
-        "job_title": "Engineer",
-        "job_level": "L3",
+        **catalog["role"],
         "current_country": "IN",
         "currency": "INR",
         "hire_date": HIRE,
@@ -172,13 +172,17 @@ def test_create_is_all_or_nothing(db, client, catalog, monkeypatch):
 def test_patch_updates_details_only(client, catalog, employee):
     response = client.patch(
         f"/employees/{employee['id']}",
-        json={"job_title": "Senior Engineer", "job_level": "L4", "status": "on_leave"},
+        json={
+            "job_title_id": catalog["org"]["titles"]["Data Engineer"],
+            "job_level_id": catalog["org"]["levels"]["L4"],
+            "status": "on_leave",
+        },
     )
 
     assert response.status_code == 200
     updated = response.json()
     assert (updated["job_title"], updated["job_level"], updated["status"]) == (
-        "Senior Engineer",
+        "Data Engineer",
         "L4",
         "on_leave",
     )
@@ -221,7 +225,7 @@ def test_patch_duplicate_email_is_409(client, catalog, employee):
 
 
 def test_patch_missing_employee_is_404(client):
-    assert client.patch("/employees/-1", json={"job_level": "L5"}).status_code == 404
+    assert client.patch("/employees/-1", json={"first_name": "X"}).status_code == 404
 
 
 # --- terminate ---
@@ -288,7 +292,7 @@ def test_terminate_twice_is_409_and_terminated_employees_are_read_only(
         ).status_code
         == 409
     )
-    assert client.patch(url, json={"job_level": "L5"}).status_code == 409
+    assert client.patch(url, json={"first_name": "X"}).status_code == 409
 
 
 def test_terminated_employee_stays_searchable(client, catalog, employee):

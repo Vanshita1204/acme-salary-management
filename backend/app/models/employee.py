@@ -22,6 +22,7 @@ from app.db.session import Base
 from app.models.company import Company
 from app.models.country import Country
 from app.models.currency import Currency
+from app.models.org import Department, JobLevel, JobTitle
 
 EMPLOYEE_STATUSES = ("active", "on_leave", "terminated")
 
@@ -45,9 +46,15 @@ class Employee(Base):
     first_name: Mapped[str] = mapped_column(Text, nullable=False)
     last_name: Mapped[str] = mapped_column(Text, nullable=False)
     email: Mapped[str] = mapped_column(CITEXT, nullable=False, unique=True)
-    department: Mapped[str] = mapped_column(Text, nullable=False)
-    job_title: Mapped[str] = mapped_column(Text, nullable=False)
-    job_level: Mapped[str] = mapped_column(Text, nullable=False)
+    department_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("departments.id"), nullable=False
+    )
+    job_title_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("job_titles.id"), nullable=False
+    )
+    job_level_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("job_levels.id"), nullable=False
+    )
     current_country: Mapped[str] = mapped_column(
         CHAR(2), ForeignKey("countries.code"), nullable=False
     )
@@ -64,6 +71,10 @@ class Employee(Base):
     )
 
     company: Mapped[Company] = relationship()
+    # Tiny lookup tables: always loaded with the employee, so responses carry names.
+    department_ref: Mapped[Department] = relationship(lazy="joined")
+    job_title_ref: Mapped[JobTitle] = relationship(lazy="joined")
+    job_level_ref: Mapped[JobLevel] = relationship(lazy="joined")
     country: Mapped[Country] = relationship()
     currency_ref: Mapped[Currency] = relationship()
     compensation_records: Mapped[list["CompensationRecord"]] = relationship(  # noqa: F821
@@ -72,6 +83,18 @@ class Employee(Base):
     current_compensation: Mapped[list["CurrentCompensation"]] = relationship(  # noqa: F821
         back_populates="employee"
     )
+
+    @property
+    def department(self) -> str:
+        return self.department_ref.name
+
+    @property
+    def job_title(self) -> str:
+        return self.job_title_ref.name
+
+    @property
+    def job_level(self) -> str:
+        return self.job_level_ref.code
 
     __table_args__ = (
         CheckConstraint(
@@ -87,10 +110,10 @@ class Employee(Base):
             name="chk_termination_after_hire",
         ),
         Index("ix_employees_company", "company_id"),
-        Index("ix_employees_department", "department"),
+        Index("ix_employees_department", "department_id"),
         Index("ix_employees_country", "current_country"),
-        Index("ix_employees_title", "job_title"),
-        Index("ix_employees_level", "job_level"),
+        Index("ix_employees_title", "job_title_id"),
+        Index("ix_employees_level", "job_level_id"),
         Index("ix_employees_status", "status"),
         Index("ix_employees_hire_date", "hire_date", "id"),
         Index("ix_employees_name_search", func.lower(text("last_name")), func.lower(text("first_name"))),

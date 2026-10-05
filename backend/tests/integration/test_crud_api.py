@@ -18,7 +18,7 @@ def unique(prefix: str) -> str:
 
 
 @pytest.fixture
-def catalog(db, client):
+def catalog(db, client, org):
     """The 1.2 reference data, loaded inside the test transaction, plus one company."""
     load_reference_data(db)
     load_compensation_types(db)
@@ -37,6 +37,7 @@ def catalog(db, client):
             )
         ),
         "reasons": {r.code: r.id for r in db.scalars(select(ChangeReason))},
+        "role": org["role"],
     }
 
 
@@ -46,9 +47,7 @@ def employee_body(catalog, **overrides) -> dict:
         "first_name": "Ada",
         "last_name": "Lovelace",
         "email": f"{unique('ada')}@example.com",
-        "department": "Engineering",
-        "job_title": "Engineer",
-        "job_level": "L3",
+        **catalog["role"],
         "current_country": "in",
         "currency": "inr",
         "hire_date": "2024-01-15",
@@ -313,6 +312,7 @@ def test_record_is_written_in_employees_country_and_currency(client, catalog, em
     record = response.json()
     assert (record["country"], record["currency"]) == ("IN", "INR")
     assert record["amount"] == "150000.00"
+    assert record.pop("is_current") is True
     assert client.get(f"/compensation-records/{record['id']}").json() == record
 
 

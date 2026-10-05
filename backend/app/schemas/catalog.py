@@ -73,3 +73,53 @@ class ChangeReasonOut(ORMModel):
     id: int
     code: str
     label: str
+
+
+# --- org structure (Phase 7A) ---
+
+
+class DepartmentIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: NonEmpty
+
+
+class DepartmentOut(ORMModel):
+    id: int
+    name: str
+
+
+class JobTitleIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: NonEmpty
+
+
+class JobTitleOut(ORMModel):
+    id: int
+    name: str
+
+
+class JobLevelIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: NonEmpty
+    label: NonEmpty
+    rank: int = Field(description="Order of seniority; unique, lower is more junior")
+
+
+class JobLevelUpdate(BaseModel):
+    """Levels are labels: renaming or re-ranking doesn't change any pay or history."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: NonEmpty | None = None
+    label: NonEmpty | None = None
+    rank: int | None = None
+
+
+class JobLevelOut(ORMModel):
+    id: int
+    code: str
+    label: str
+    rank: int

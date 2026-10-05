@@ -7,6 +7,7 @@ from app.models.currency import Currency
 from app.models.current_compensation import CurrentCompensation
 from app.models.employee import EMPLOYEE_STATUSES, Employee
 from app.models.exchange_rate import ExchangeRate
+from app.models.org import Department, JobLevel, JobTitle
 
 __all__ = [
     "EMPLOYEE_STATUSES",
@@ -17,6 +18,9 @@ __all__ = [
     "Country",
     "Currency",
     "CurrentCompensation",
+    "Department",
     "Employee",
     "ExchangeRate",
+    "JobLevel",
+    "JobTitle",
 ]

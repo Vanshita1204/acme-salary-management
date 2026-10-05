@@ -37,9 +37,9 @@ class EmployeeIn(BaseModel):
     first_name: NonEmpty
     last_name: NonEmpty
     email: EmailStr
-    department: NonEmpty
-    job_title: NonEmpty
-    job_level: NonEmpty
+    department_id: int
+    job_title_id: int
+    job_level_id: int
     current_country: CountryCode
     currency: CurrencyCode
     status: ActiveStatus = "active"
@@ -58,9 +58,9 @@ class EmployeeUpdate(BaseModel):
     first_name: NonEmpty | None = None
     last_name: NonEmpty | None = None
     email: EmailStr | None = None
-    department: NonEmpty | None = None
-    job_title: NonEmpty | None = None
-    job_level: NonEmpty | None = None
+    department_id: int | None = None
+    job_title_id: int | None = None
+    job_level_id: int | None = None
     status: ActiveStatus | None = None
 
 
@@ -77,9 +77,12 @@ class EmployeeOut(ORMModel):
     first_name: str
     last_name: str
     email: str
-    department: str
-    job_title: str
-    job_level: str
+    department_id: int
+    department: str  # name
+    job_title_id: int
+    job_title: str  # name
+    job_level_id: int
+    job_level: str  # code
     current_country: str
     currency: str
     status: Status
@@ -90,8 +93,13 @@ class EmployeeOut(ORMModel):
 
 
 class CompensationRecordIn(BaseModel):
-    """Country and currency aren't accepted: a record is written in the employee's
+    """A compensation change for one type (FR-4). Any change reason works with any
+    type ("correction" fixes a mistake); the effective date may be in the future.
+
+    Country and currency aren't accepted: a record is written in the employee's
     current country and currency (the DB trigger enforces the currency)."""
+
+    model_config = ConfigDict(extra="forbid")
 
     compensation_type_id: int
     change_reason_id: int
@@ -115,14 +123,23 @@ class CompensationRecordOut(ORMModel):
     created_at: datetime
 
 
+class CompensationChangeOut(CompensationRecordOut):
+    # False while the record is future-dated (it becomes current on its date), or
+    # when a newer record of the same type is already current (a back-dated fix).
+    is_current: bool
+
+
 class DirectoryItem(BaseModel):
     id: int
     code: str
     first_name: str
     last_name: str
     email: str
+    department_id: int
     department: str
+    job_title_id: int
     job_title: str
+    job_level_id: int
     job_level: str
     current_country: str
     status: Status
