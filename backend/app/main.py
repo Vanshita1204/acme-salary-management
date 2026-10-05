@@ -2,6 +2,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
 from app.api import (
+    analytics,
     change_reasons,
     companies,
     compensation_types,
@@ -30,6 +31,7 @@ for module in (
     employees,
     exchange_rates,
     imports,
+    analytics,
 ):
     app.include_router(module.router)
 for router in (org.departments, org.job_titles, org.job_levels):

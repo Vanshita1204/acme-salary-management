@@ -310,7 +310,7 @@ Two distinct operations, both built here:
 - **Done when (verified):** `tests/integration/test_relocation_api.py` (22 tests) — a country-only relocation adds one history entry at the same amount and leaves the total unchanged, with earlier records keeping their old country; a currency change rewrites all three current types and a SQL check finds no current row in a currency other than the employee's (also checked after every rejected or failed attempt); the rewritten history entries are flagged rather than given a percent; missing/extra/duplicate types, zero base pay, unknown or same currency, pending future changes, back-dated and future dates, terminated employees; a failure on the second of three records rolls back the currency and every record; the combined relocation + currency change. Removing the "every type" check fails three of these tests.
 
 
-## Phase 12 — Pay Insights / Analytics (§5)
+## Phase 12 — Pay Insights / Analytics (§5) — Done
 Each view: active employees only, current compensation, selected reporting currency, respects directory filters, shows rates-as-of date.
 - Summary cards + cost breakdown (overall/country/department).
 - Grouped statistics (avg/median/min/max by department, country, title, level) via SQL `percentile_cont`. Grouped by Phase 7A's ids, levels ordered by `rank`.
@@ -320,6 +320,18 @@ Each view: active employees only, current compensation, selected reporting curre
 - Change report with date range + average increase (corrections excluded).
 - Composition breakdown, grouped by `compensation_types.category` (open-ended, not a fixed base/variable split — see `docs/DATABASE_DESIGN.md`).
 - **Done when:** every row in the §5 table maps to a working view, computed SQL-side (not pulled into Python), on the 10k seed.
+- **As built** (`app/services/analytics.py`, `app/api/analytics.py`; all `GET /analytics/…`):
+  - **Shared by every view:** the directory's search and filters plus `reporting_currency` (the same `DirectoryView` dependency as the directory and export). Active employees only — a `status` filter is ignored. Each employee's annual CTC comes from current compensation, converted through the latest stored USD rates. Every response carries `reporting_currency`, `rates_as_of` (the date of each rate used) and `excluded_no_rate` — active employees whose currency has no stored rate are counted, not silently dropped.
+  - `/summary` — headcount, total cost, average and median, plus cost by country and by department with each one's share.
+  - `/stats?group_by=department|country|title|level` — average, median (`percentile_cont`), minimum, maximum and headcount per group; levels by rank.
+  - `/role-by-country` — title × level × country with headcount, average and median; narrow with `job_title_id` / `job_level_id`.
+  - `/histogram?bins=` (1–100, default 20) — equal-width bins from lowest to highest, the maximum in the last bin.
+  - `/outliers` — below 80% or above 120% of the peer median (same title, level, country; groups of at least 5), most extreme first by ratio. Peer groups are formed from the *filtered* population, so filtering to one department compares people only within it.
+  - `/composition` — share of CTC per compensation-type category; types outside CTC are left out so the shares agree with the other views.
+  - `/changes?date_from=&date_to=&limit=` — one event per employee per effective date, compared with the day before, in the employee's own currency (no rates involved). It counts toward the average increase unless it includes a correction, crosses a currency change, has no previous pay (a new hire), changes only types outside CTC, or is a relocation that leaves pay unchanged; each excluded event says why (`excluded_because`). The range stops at today. Counts and average cover every event; `items` is the newest `limit`.
+  - Computed in SQL, not Python: window functions and `percentile_cont`; the change report reads the history once (each record gets the date it stopped applying via `lead()`), and returns the summary and the first page in one statement. Due future-dated records are promoted first, as on every read.
+- **Done when (verified):** `tests/integration/test_analytics_api.py` (20 tests) builds a 12-person population with known pay in three currencies and compares every view with the pure definitions in `app.domain.analytics` worked out independently in Python — totals, averages, medians, grouped stats, histogram bins, outliers and their order, composition — plus the active-only rule, filters, an employee with no rate, a provider outage (previous rates keep working and their date is shown), and the change report's average increase with each exclusion reason. Removing the active-only rule fails 11 of them; removing the 5-person minimum fails the outlier test. On the 10k seed every view answers in 0.1–0.45 s (summary 163 ms, stats ~100 ms, role-by-country 199 ms, histogram 143 ms, outliers 232 ms, composition 127 ms, a full year's change report 440 ms). Past the deployed size these aggregate over every active employee (Scale Lab E3/E5): the next step there is `employee_totals` or materialized views.
+
 
 ## Phase 13 — Frontend (React/Vite)
 - Directory table with search/filter/sort/pagination (Phase 5).
