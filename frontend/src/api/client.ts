@@ -1,3 +1,5 @@
+import { formatDate } from "../lib/format";
+
 // The only place that talks to the backend. Every failure becomes an ApiError whose
 // message is safe to show a person; field-level problems are kept for inline display.
 
@@ -36,22 +38,43 @@ export class ApiError extends Error {
 
 interface ValidationIssue { loc?: (string | number)[]; msg?: string }
 
+/**
+ * Server sentences sometimes carry field names and ISO dates ("effective_date can't be before
+ * ... (2025-06-01)"). Show them the way the rest of the app does.
+ */
+export function readable(sentence: string): string {
+  return sentence
+    .replace(/\b[a-z]+(?:_[a-z]+)+\b/g, (name) => name.replace(/_/g, " "))
+    .replace(/\b(\d{4}-\d{2}-\d{2})\b/g, (iso) => formatDate(iso));
+}
+
+/** What to say when the server (or a proxy in front of it) gave no sentence of its own. */
+export function fallbackMessage(status: number): string {
+  if (status === 401 || status === 403) return "You don't have permission to do that.";
+  if (status === 404) return "That wasn't found. It may have been moved or the link may be wrong.";
+  if (status === 413) return "That file is too large.";
+  if (status === 429) return "Too many requests. Wait a moment and try again.";
+  if (status === 502 || status === 503 || status === 504) return "The service isn't available right now. Try again in a moment.";
+  if (status >= 500) return "Something went wrong on the server. Try again, and tell whoever runs this system if it keeps happening.";
+  return `The request couldn't be completed (error ${status}).`;
+}
+
 /** FastAPI validation errors: detail is a list of {loc, msg}. */
 function fromDetail(status: number, detail: unknown, body: unknown): ApiError {
-  if (typeof detail === "string") return new ApiError(status, detail, {}, body);
+  if (typeof detail === "string") return new ApiError(status, readable(detail), {}, body);
   if (Array.isArray(detail)) {
     const fields: Record<string, string> = {};
     const lines: string[] = [];
     for (const issue of detail as ValidationIssue[]) {
-      const path = (issue.loc ?? []).filter((part) => part !== "body" && part !== "query");
+      const path = (issue.loc ?? []).filter((part) => part !== "body" && part !== "query" && part !== "path");
       const field = path.map(String).join(".");
       const msg = (issue.msg ?? "invalid value").replace(/^Value error, /, "");
       if (field && !(field in fields)) fields[field] = msg;
       lines.push(field ? `${field}: ${msg}` : msg);
     }
-    return new ApiError(status, lines.join("; ") || "The request was not valid.", fields, body);
+    return new ApiError(status, readable(lines.join("; ")) || "The request was not valid.", fields, body);
   }
-  return new ApiError(status, `Request failed (${status}).`, {}, body);
+  return new ApiError(status, fallbackMessage(status), {}, body);
 }
 
 async function request<T>(method: string, path: string, init: { params?: Params; json?: unknown; form?: FormData } = {}): Promise<T> {

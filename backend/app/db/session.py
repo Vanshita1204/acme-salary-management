@@ -5,7 +5,10 @@ from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import get_settings
 
-engine = create_engine(get_settings().database_url, future=True)
+_settings = get_settings()
+# pool_pre_ping: test a pooled connection before using it, so after a database restart the
+# first request replaces the dead connection instead of failing.
+engine = create_engine(_settings.runtime_database_url or _settings.database_url, future=True, pool_pre_ping=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
 

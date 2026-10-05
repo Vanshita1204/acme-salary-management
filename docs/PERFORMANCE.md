@@ -142,6 +142,21 @@ About 5–10% slower — the employee rows now join three tiny lookup tables for
 
 ---
 
+## Final check — Phase 14
+
+Re-run on the final schema (all migrations through `0012`), pristine 10,000 employees, with scratch exchange rates inserted for the run and deleted afterwards (`scale_lab/api_latency.py`; results in `scale_lab/results/*phase14_10k.json`).
+
+| Request mix | Requests | p95 | Target |
+|---|---|---|---|
+| Directory: 11 filter / sort / search combinations | list, search, filter | **80 ms** | < 500 ms |
+| Analytics: all seven views, 10 combinations | | **391 ms** (slowest view, year-over-year change: 453 ms) | < 500 ms |
+| CSV export, full unfiltered | file download | **639 ms** (median ~538 ms) | not covered |
+| Phase 5 benchmark, same as above | | 66.9 ms | no regression (65 ms before 7A, 70–73 ms after) |
+
+The export is over 500 ms, but the requirement covers listing, searching and filtering, not downloading a file of every employee. About 250 ms goes to loading ORM entities, the rest to totals batches and 73 ms of CSV writing; no cheap fix, and filtered exports are far faster.
+
+---
+
 ## Summary — what the lab confirmed or changed
 
 | Decision | Status | Evidence |

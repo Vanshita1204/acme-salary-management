@@ -1,0 +1,152 @@
+{
+  "environment": {
+    "machine": "Linux-6.18.44-fc-v70-x86_64-with-glibc2.39",
+    "cpu_count": 4,
+    "memory_gb": 16,
+    "postgres": "16.14 (Ubuntu 16.14-0ubuntu0.24.04.1)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "163848kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-05T16:35:55+00:00"
+  },
+  "target_ms": 500,
+  "overall_p95_ms": {
+    "directory": 80.0,
+    "export": 639.3,
+    "analytics": 390.8
+  },
+  "requests": {
+    "directory": 220,
+    "export": 30,
+    "analytics": 100
+  },
+  "directory": [
+    {
+      "request": "{}",
+      "median_ms": 18.0,
+      "p95_ms": 29.3
+    },
+    {
+      "request": "{'q': 'an'}",
+      "median_ms": 19.7,
+      "p95_ms": 24.2
+    },
+    {
+      "request": "{'q': 'smith', 'status': ['active', 'on_leave'], 'sort': 'compensation'}",
+      "median_ms": 72.5,
+      "p95_ms": 94.0
+    },
+    {
+      "request": "{'department': 'Engineering', 'country': 'IN', 'job_level': 'L3', 'status': 'active', 'sort': 'compensation', 'order': 'desc'}",
+      "median_ms": 52.2,
+      "p95_ms": 63.9
+    },
+    {
+      "request": "{'q': 'an', 'department': 'Sales', 'sort': 'hire_date'}",
+      "median_ms": 21.2,
+      "p95_ms": 30.9
+    },
+    {
+      "request": "{'min_level_rank': 4, 'country': ['US', 'GB', 'DE'], 'sort': 'level', 'order': 'desc'}",
+      "median_ms": 26.5,
+      "p95_ms": 31.2
+    },
+    {
+      "request": "{'job_title': 'Support Specialist', 'min_level_rank': 2, 'max_level_rank': 4, 'reporting_currency': 'EUR', 'sort': 'compensation'}",
+      "median_ms": 54.9,
+      "p95_ms": 66.6
+    },
+    {
+      "request": "{'country': ['IN', 'US', 'GB', 'DE', 'BR'], 'status': 'active', 'sort': 'compensation', 'order': 'desc', 'limit': 200}",
+      "median_ms": 75.5,
+      "p95_ms": 88.4
+    },
+    {
+      "request": "{'status': 'terminated', 'sort': 'hire_date', 'order': 'desc'}",
+      "median_ms": 20.2,
+      "p95_ms": 26.6
+    },
+    {
+      "request": "{'q': 'EMP-0012'}",
+      "median_ms": 36.5,
+      "p95_ms": 46.4
+    },
+    {
+      "request": "{'q': 'zzzz-no-match'}",
+      "median_ms": 38.4,
+      "p95_ms": 47.4
+    }
+  ],
+  "export": [
+    {
+      "request": "{}",
+      "median_ms": 537.8,
+      "p95_ms": 646.5
+    },
+    {
+      "request": "{'country': 'IN', 'sort': 'compensation', 'order': 'desc'}",
+      "median_ms": 185.3,
+      "p95_ms": 291.6
+    },
+    {
+      "request": "{'department': 'Sales', 'job_level': 'L3', 'reporting_currency': 'EUR'}",
+      "median_ms": 32.1,
+      "p95_ms": 37.6
+    }
+  ],
+  "analytics": [
+    {
+      "request": "summary {}",
+      "median_ms": 164.2,
+      "p95_ms": 216.7
+    },
+    {
+      "request": "stats {'group_by': 'level'}",
+      "median_ms": 88.1,
+      "p95_ms": 103.0
+    },
+    {
+      "request": "stats {'group_by': 'title'}",
+      "median_ms": 92.3,
+      "p95_ms": 123.0
+    },
+    {
+      "request": "role-by-country {'job_title': 'Software Engineer', 'job_level': 'L3'}",
+      "median_ms": 74.0,
+      "p95_ms": 86.8
+    },
+    {
+      "request": "histogram {'bins': 20}",
+      "median_ms": 122.9,
+      "p95_ms": 142.2
+    },
+    {
+      "request": "outliers {}",
+      "median_ms": 189.9,
+      "p95_ms": 205.6
+    },
+    {
+      "request": "composition {}",
+      "median_ms": 112.1,
+      "p95_ms": 154.9
+    },
+    {
+      "request": "changes {'date_from': '2025-01-01', 'date_to': '2025-12-31'}",
+      "median_ms": 391.9,
+      "p95_ms": 452.7
+    },
+    {
+      "request": "summary {'department': 'Engineering', 'country': 'IN', 'reporting_currency': 'INR'}",
+      "median_ms": 122.1,
+      "p95_ms": 127.0
+    },
+    {
+      "request": "outliers {'country': 'US', 'reporting_currency': 'EUR'}",
+      "median_ms": 108.9,
+      "p95_ms": 145.6
+    }
+  ]
+}

@@ -366,10 +366,22 @@ Each view: active employees only, current compensation, selected reporting curre
 - **Not covered:** no automated end-to-end suite is checked in (the browser runs used a throwaway Playwright script against a live backend); adding one to CI belongs with Phase 14.
 
 
-## Phase 14 — Non-functional hardening
+## Phase 14 — Non-functional hardening ✅ Done
 - Re-run the 500 ms directory check (§1, §7) against the final schema/indexes with the full 10k seed and realistic filter combinations.
 - Confirm append-only is structurally impossible to violate (no UPDATE/DELETE grants or code paths on `compensation_records`).
 - Error handling and validation messages reviewed end-to-end (API error shapes → frontend display).
+- Tests get their own database (the cross-cutting note below).
+- **As built:**
+  - **Append-only, four layers.** (1) Privileges: `app/db/grants.py` defines the least-privilege role (`python -m app.db.grants ROLE`, needs `APP_DB_PASSWORD`); `compensation_records` gets `SELECT, INSERT` only and no table anywhere gets `DELETE` or `TRUNCATE`. The app uses it by setting `RUNTIME_DATABASE_URL`; migrations keep using the owner `DATABASE_URL`. (2) The existing row trigger blocks `UPDATE`/`DELETE` even for the owner. (3) New migration `0012_no_truncate_records` adds a statement-level `BEFORE TRUNCATE` trigger — **this closed a real hole**: `TRUNCATE compensation_records CASCADE` (via another table) wiped history and row triggers don't fire on it. (4) Static tests scan `app/` (AST) for any `update`/`delete` on the model and check no route exposes PUT/PATCH/DELETE for records.
+  - **Error contract.** Every handled error is `{"detail": str | [{loc, msg}]}`. Unexpected errors used to return plain text; now JSON handlers return 500 (`Something went wrong…`, never the exception text) and 503 for an unreachable database. The connection pool pings before use, so the API recovers after a database restart.
+  - **Frontend.** `readable()` rewrites server sentences that name raw fields or ISO dates; a failed refresh keeps the old data on screen under a "may be out of date" banner instead of silently showing stale numbers; an unknown employee id shows a not-found page with a way back.
+  - **Test database.** Tests run against `<db>_test` (auto-created, or `TEST_DATABASE_URL`), never the dev data. A guard fails any test that opens a non-loopback socket or makes an HTTP call.
+  - **Index test.** `tests/integration/test_indexes.py` ties each directory filter and sort to an existing index, so dropping one fails a test.
+- **Done when (verified):**
+  - 500 ms re-check on the pristine 10,000 employees (`scale_lab/results/*phase14*`, details in `PERFORMANCE.md`): directory p95 80 ms; analytics p95 391 ms; the full unfiltered CSV export p95 639 ms (a file download, not the list/search/filter the target covers).
+  - The whole API workflow was run as the restricted role, so the limited privileges are shown sufficient, not just restrictive. Each protection was mutation-checked (remove it, watch the test fail).
+  - `test_error_contract.py` covers 18 failure classes; Playwright confirmed field errors, rule refusals, not-found, and database-down-then-recovered in the browser.
+- **Found while testing:** analytics excluded everyone when no exchange rates were stored (same-currency amounts now need no rate); a contradictory "no rates were needed… left out" note; tests that silently depended on dev data; an earlier test of mine that proved nothing on an empty table.
 
 ## Phase 15 — Deployment
 - Hosted instance with managed Postgres, seeded on first run (per §9): `alembic upgrade head`, then the 1.2 seed commands (currencies/countries + first live rate fetch, companies, compensation catalog), then the Phase 3 seed. Both are idempotent.
@@ -381,6 +393,6 @@ Per `docs/SCALE_LAB.md` E4–E8 (trigram search, materialized analytics, large-i
 ---
 
 ## Cross-cutting, continuous
-- **Testing split (§7):** unit tests on Phase 2's pure functions (`tests/unit/`, fast, no infra); integration tests for API/DB behavior against the docker-compose Postgres (`tests/integration/`). The integration fixture runs `alembic upgrade head` once per session and wraps every test in a rolled-back transaction, so the dev DB is never polluted. Tests never call the live exchange-rate provider. They currently share the dev database (`acme_salary`); split off a dedicated test database once Phase 3's seed data lives there.
+- **Testing split (§7):** unit tests on Phase 2's pure functions (`tests/unit/`, fast, no infra); integration tests for API/DB behavior against the docker-compose Postgres (`tests/integration/`). The integration fixture runs `alembic upgrade head` once per session and wraps every test in a rolled-back transaction, so the dev DB is never polluted. Tests never call the live exchange-rate provider. Since Phase 14 they run against a dedicated `<db>_test` database.
 - **AI_USAGE.md:** log Phase 3 entries as they happen (per the file's existing template) — what was generated, what was changed, what bugs were caught by tests.
 - **Sequencing risk:** Phases 5 and 12 both depend on Phase 4's conclusions about the current-compensation strategy — don't hand-build either against an unvalidated assumption.

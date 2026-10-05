@@ -6,7 +6,10 @@ import uuid
 import pytest
 
 from app.api.db_errors import UNIQUE_MESSAGE
+from app.seed.change_reasons import load_change_reasons
+from app.seed.compensation_types import load_compensation_types
 from app.seed.org_structure import LEVEL_CODES
+from app.seed.reference import load_reference_data
 from app.services.employees import (
     UNKNOWN_DEPARTMENT,
     UNKNOWN_JOB_LEVEL,
@@ -19,7 +22,10 @@ def unique(prefix: str) -> str:
 
 
 @pytest.fixture
-def company(client) -> int:
+def company(client, db) -> int:
+    load_reference_data(db)
+    load_compensation_types(db)
+    load_change_reasons(db)
     return client.post("/companies", json={"name": unique("pytest co")}).json()["id"]
 
 
@@ -86,7 +92,7 @@ def test_rename_keeps_employees_pointing_at_it(client, org, company, path):
 
 
 @pytest.mark.parametrize("path", ["/departments", "/job-titles", "/job-levels"])
-def test_entries_cannot_be_deleted(client, path):
+def test_entries_cannot_be_deleted(client, org, path):
     entry_id = client.get(path).json()[0]["id"]
     assert client.delete(f"{path}/{entry_id}").status_code == 405
 

@@ -417,7 +417,7 @@ CREATE INDEX ix_exchange_rates_latest ON exchange_rates (currency, rate_date DES
 | Employee code unique | `UNIQUE` on `employees.code` |
 | Currency must be supported | FK to `currencies.code` |
 | Country must be valid | FK to `countries.code` |
-| Compensation history never modified | `BEFORE UPDATE OR DELETE` trigger raising on `compensation_records` |
+| Compensation history never modified | `BEFORE UPDATE OR DELETE` row trigger and `BEFORE TRUNCATE` statement trigger (migration `0012`, closes `TRUNCATE … CASCADE`) raising on `compensation_records`; the runtime role (`app/db/grants.py`) has `SELECT, INSERT` only on it and no `DELETE`/`TRUNCATE` anywhere |
 | Terminated employees excluded from analytics, still searchable | not a schema concern — every analytics query filters `WHERE status = 'active'`, directory queries don't |
 
 ---
@@ -435,7 +435,7 @@ CREATE INDEX ix_exchange_rates_latest ON exchange_rates (currency, rate_date DES
 | Latest rate per currency | `(currency, rate_date DESC)` on `exchange_rates` |
 
 ## Migration note
-Updated dependency order for Phase 1: `currencies` → `countries` → `companies` → `compensation_types` → `change_reasons` (no FK to `compensation_types`) → `employees` → `compensation_records` (+ validation trigger + append-only trigger) → `current_compensation` → `exchange_rates`. `compensation_types` no longer depends on `companies` — it's listed in this order for convenience, not because of an FK. Each as its own Alembic revision. Phase 7A added `0011_org_structure` (`departments`, `job_titles`, `job_levels`, and the `employees` FKs), which backfills existing employees in place. Validate as integration tests immediately after: negative/zero amount on the `is_base_pay` type, zero/negative `period_months`, a nonexistent change reason, a duplicate reason code, a record whose `currency` doesn't match `employees.currency`, a second row with `is_base_pay = true` (should fail globally, not just per company), `termination_date` set without `status = 'terminated'`, and direct `UPDATE`/`DELETE` against `compensation_records`. Also add a unit test (pure function, no DB) for `annualize(amount, period_months)` covering monthly/quarterly/semi-annual/annual inputs.
+Updated dependency order for Phase 1: `currencies` → `countries` → `companies` → `compensation_types` → `change_reasons` (no FK to `compensation_types`) → `employees` → `compensation_records` (+ validation trigger + append-only trigger) → `current_compensation` → `exchange_rates`. `compensation_types` no longer depends on `companies` — it's listed in this order for convenience, not because of an FK. Each as its own Alembic revision. Phase 14 added `0012_no_truncate_records` (the truncate trigger). Phase 7A added `0011_org_structure` (`departments`, `job_titles`, `job_levels`, and the `employees` FKs), which backfills existing employees in place. Validate as integration tests immediately after: negative/zero amount on the `is_base_pay` type, zero/negative `period_months`, a nonexistent change reason, a duplicate reason code, a record whose `currency` doesn't match `employees.currency`, a second row with `is_base_pay = true` (should fail globally, not just per company), `termination_date` set without `status = 'terminated'`, and direct `UPDATE`/`DELETE` against `compensation_records`. Also add a unit test (pure function, no DB) for `annualize(amount, period_months)` covering monthly/quarterly/semi-annual/annual inputs.
 
 ---
 
