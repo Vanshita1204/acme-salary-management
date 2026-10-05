@@ -33,7 +33,7 @@ from app.services.compensation import (
     utc_today,
 )
 from app.services.errors import Problem, ServiceError
-from app.services.exchange_rates import latest_rates
+from app.services.exchange_rates import latest_rates, require_supported_currency
 
 NEW_HIRE = "new_hire"
 CENT = Decimal("0.01")
@@ -196,8 +196,8 @@ class Profile:
 
 def get_profile(session: Session, employee_id: int, reporting_currency: str) -> Profile:
     employee = get_employee(session, employee_id)
+    reporting = require_supported_currency(session, reporting_currency)
     promote_due_records(session)
-    reporting = reporting_currency.upper()
     rates, rate_dates = latest_rates(session)
 
     def to_reporting(amount: Decimal) -> Decimal | None:
