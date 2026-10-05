@@ -95,7 +95,11 @@ def http_error(exc: DBAPIError) -> HTTPException:
 
 @contextmanager
 def translate_db_errors(db: Session) -> Iterator[None]:
-    """Wrap a write: on a constraint/trigger rejection, roll back and raise a 409/422."""
+    """Wrap a write so it's all-or-nothing.
+
+    Any failure rolls back everything written inside the block. A constraint or trigger
+    rejection becomes a 409/422; anything else is re-raised unchanged.
+    """
     try:
         yield
     except DBAPIError as exc:
@@ -103,3 +107,6 @@ def translate_db_errors(db: Session) -> Iterator[None]:
         if not isinstance(exc.orig, RULE_VIOLATIONS):
             raise  # connection loss, syntax errors etc. are real 500s
         raise http_error(exc) from exc
+    except Exception:
+        db.rollback()  # e.g. a ServiceError after earlier rows were flushed
+        raise

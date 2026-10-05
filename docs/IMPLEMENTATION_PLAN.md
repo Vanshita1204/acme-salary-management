@@ -151,12 +151,28 @@ Per `docs/SCALE_LAB.md` E1–E3, run at S (10k) and M (1M); full results in **`d
 - Logic in `app/services/directory.py`; tests in `tests/integration/test_directory_api.py` (every sort paged forward then back across all pages, cross-currency ordering, filters, search, cursor errors) and `tests/unit/test_pagination.py`.
 - **Done when (verified):** `python -m scale_lab.directory_latency` — 15 search/filter/sort combinations, first and second pages, 300 requests through the full FastAPI stack on the 10k seed: **p95 42 ms** (target < 500 ms). Slowest are the compensation sort (~42 ms median) and searches that scan without an index (~28 ms). At 1M (informational) index-backed requests stay under ~65 ms, but those two reach 2.7–3.6 s and 0.8–1.3 s — the scaling path is `employee_totals` and a `pg_trgm` search index (Scale Lab E4); see `docs/PERFORMANCE.md`.
 
-## Phase 6 — Employee Profile, Create/Edit/Terminate (FR-2, FR-3)
-- `GET /employees/{id}`: full detail + current breakdown per type (local + reporting currency, annualized) + reverse-chronological history per type with reason, note, changed by, and % change (Phase 2 formula).
-- `POST /employees`: requires an initial compensation record for the base-pay type (`is_base_pay = true`) with reason "new hire" (atomic — both rows or neither). Other types are added afterward via Phase 7.
-- `PATCH /employees/{id}`: employee fields only; no compensation fields accepted here.
-- `POST /employees/{id}/terminate`: sets status *and* `termination_date` together (the DB `CHECK` requires both), never deletes.
-- **Done when:** editing an employee cannot change compensation, creating one cannot skip the base-pay record, and terminating without a reachable `termination_date` is rejected — enforced in the service layer and covered by tests.
+## Phase 6 — Employee Profile, Create/Edit/Terminate (FR-2, FR-3) — Done
+- **`GET /employees/{id}?reporting_currency=`** — the profile:
+  - the employee
+  - the current breakdown per type: amount per period, annualized, annualized in the reporting currency, whether it counts toward CTC
+  - total CTC in local and reporting currency, and `rates_as_of`
+  - the full history newest first. Each record has its type, reason (code + label), note, changed by, the previous same-type amount, `percent_change`, and `currency_changed`. When the currency differs from the previous record, the % change is `null` and flagged rather than computed across currencies (FR-7).
+- **`POST /employees`** requires `base_pay` (amount > 0) and `changed_by`. In one transaction it writes the employee, a "new hire" base-pay record effective on the hire date, and the current-compensation row.
+  - `status` may only be `active` / `on_leave`; termination fields and `code` are rejected (`extra="forbid"`).
+  - Atomicity is enforced by `translate_db_errors`, which now rolls back on *any* failure, not only DB errors. A test simulates the record write failing and checks no employee row survives; it fails without the rollback.
+- **`PATCH /employees/{id}`** edits details only: company, names, email, department, title, level, and `active`↔`on_leave`.
+  - Compensation, currency/country (FR-7, Phase 11), hire date, termination fields and `code` are rejected with `422`; tests confirm current pay and history are unchanged afterwards.
+  - Terminated employees are read-only (`409`).
+- **`POST /employees/{id}/terminate`** `{termination_date}` sets status and date together and never deletes. Rejected when:
+  - the date is missing
+  - it's before the hire date or in the future
+  - the employee has compensation records effective after it
+  - the employee is already terminated (`409`)
+
+  Terminated employees stay searchable in the directory.
+- **Current compensation:** `app/services/compensation.py` `append_record` is now the single write path for records, also used by `POST /employees/{id}/compensation-records`. A record moves the `(employee, type)` pointer only if it's in effect today and newer than the current one — a back-dated correction doesn't displace a newer record; a future-dated record is stored but not yet current (resolving those when their date arrives is Phase 7).
+- Business-rule errors are `ServiceError(Problem.NOT_FOUND|CONFLICT|INVALID, message)`, with message constants in `app/services/employees.py`, mapped to 404/409/422 by one exception handler in `app/main.py`.
+- **Done when (verified):** `tests/integration/test_employee_lifecycle_api.py` (32 tests) — editing can't change compensation, creating can't skip base pay, and termination without a reachable date is rejected; plus profile totals, % change, and current-pointer behavior. The Phase 1.3 CRUD tests were updated to the new create contract. Checked live on a seeded employee's profile.
 
 ## Phase 7 — Compensation Change (FR-4)
 - `POST /employees/{id}/compensation`: appends a record for one `compensation_type_id` with any change reason from the shared list (incl. "correction"), updates `CurrentCompensation` for that type if the new record's effective date is today-or-past and newer than the current pointer for that type.

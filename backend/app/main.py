@@ -1,4 +1,5 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from app.api import (
     change_reasons,
@@ -8,8 +9,17 @@ from app.api import (
     exchange_rates,
     reference,
 )
+from app.services.errors import ServiceError
 
 app = FastAPI(title="ACME Salary Management")
+
+
+@app.exception_handler(ServiceError)
+def service_error(_: Request, exc: ServiceError) -> JSONResponse:
+    """Business-rule violations from the service layer: 404 / 409 / 422."""
+    return JSONResponse(status_code=exc.problem.value, content={"detail": exc.message})
+
+
 for module in (
     reference,
     companies,

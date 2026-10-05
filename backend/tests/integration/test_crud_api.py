@@ -6,7 +6,7 @@ import uuid
 import pytest
 from sqlalchemy import select
 
-from app.api.db_errors import CHECK_MESSAGE, FOREIGN_KEY_MESSAGE, UNIQUE_MESSAGE
+from app.api.db_errors import FOREIGN_KEY_MESSAGE, UNIQUE_MESSAGE
 from app.models import ChangeReason, CompensationType
 from app.seed.change_reasons import load_change_reasons
 from app.seed.compensation_types import load_compensation_types
@@ -52,6 +52,8 @@ def employee_body(catalog, **overrides) -> dict:
         "current_country": "in",
         "currency": "inr",
         "hire_date": "2024-01-15",
+        "base_pay": {"amount": "150000.00"},
+        "changed_by": "hr@acme",
     }
     body.update(overrides)
     return body
@@ -244,14 +246,13 @@ def test_employee_create_and_get(client, employee):
     assert employee["current_country"] == "IN"  # normalized from 'in'
     assert employee["currency"] == "INR"
     assert employee["status"] == "active"
-    assert client.get(f"/employees/{employee['id']}").json() == employee
+    assert client.get(f"/employees/{employee['id']}").json()["employee"] == employee
 
 
 def test_employee_code_cannot_be_client_supplied(client, catalog):
     response = client.post("/employees", json=employee_body(catalog, code="EMP-999999"))
 
-    assert response.status_code == 201
-    assert response.json()["code"] != "EMP-999999"
+    assert response.status_code == 422  # unknown fields are rejected, not ignored
 
 
 def test_duplicate_email_is_409_case_insensitively(client, catalog):
@@ -274,16 +275,6 @@ def test_duplicate_email_is_409_case_insensitively(client, catalog):
         ({"company_id": -1}, FOREIGN_KEY_MESSAGE.format(entity="company")),
         ({"current_country": "QQ"}, FOREIGN_KEY_MESSAGE.format(entity="country")),
         ({"currency": "XYZ"}, FOREIGN_KEY_MESSAGE.format(entity="currency")),
-        (
-            {"status": "terminated"},
-            CHECK_MESSAGE.format(
-                entity="employee", rule="termination date matches status"
-            ),
-        ),
-        (
-            {"status": "terminated", "termination_date": "2023-01-01"},
-            CHECK_MESSAGE.format(entity="employee", rule="termination after hire"),
-        ),
     ],
 )
 def test_employee_db_rules_are_422(client, catalog, overrides, detail):
@@ -353,7 +344,8 @@ def test_history_is_newest_first(client, catalog, employee):
 
     history = client.get(url).json()
 
-    assert [r["effective_date"] for r in history] == ["2025-04-01", "2024-01-15"]
+    # The automatic new-hire record from creation, plus the two added here.
+    assert [r["effective_date"] for r in history] == ["2025-04-01", "2024-01-15", "2024-01-15"]
 
 
 @pytest.mark.parametrize(

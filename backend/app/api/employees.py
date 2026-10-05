@@ -10,12 +10,19 @@ from app.models import CompensationRecord, Employee
 from app.schemas.employees import (
     CompensationRecordIn,
     CompensationRecordOut,
+    CurrentCompensationOut,
     DirectoryItem,
     DirectoryPageOut,
     EmployeeIn,
     EmployeeOut,
+    EmployeeUpdate,
+    HistoryItemOut,
+    ProfileOut,
     Status,
+    TerminateIn,
 )
+from app.services import employees as employee_service
+from app.services.compensation import append_record
 from app.services.directory import (
     DEFAULT_LIMIT,
     MAX_LIMIT,
@@ -30,10 +37,16 @@ router = APIRouter(tags=["employees"])
     "/employees", response_model=EmployeeOut, status_code=status.HTTP_201_CREATED
 )
 def create_employee(body: EmployeeIn, db: DbSession) -> Employee:
-    """Basic create. Phase 6 adds the required initial base-pay record (FR-2)."""
-    employee = Employee(**body.model_dump())
+    """Create an employee with their initial base pay ("new hire"), atomically (FR-3)."""
+    fields = body.model_dump(exclude={"base_pay", "changed_by"})
     with translate_db_errors(db):
-        db.add(employee)
+        employee = employee_service.create_employee(
+            db,
+            fields,
+            base_pay_amount=body.base_pay.amount,
+            changed_by=body.changed_by,
+            note=body.base_pay.note,
+        )
         db.commit()
     db.refresh(employee)  # load the DB-generated code and timestamps
     return employee
@@ -97,9 +110,82 @@ def list_directory(
     )
 
 
-@router.get("/employees/{employee_id}", response_model=EmployeeOut)
-def get_employee(employee_id: int, db: DbSession) -> Employee:
-    return get_or_404(db, Employee, employee_id, "employee")
+@router.get("/employees/{employee_id}", response_model=ProfileOut)
+def get_profile(
+    employee_id: int,
+    db: DbSession,
+    reporting_currency: Annotated[str, Query(min_length=3, max_length=3)] = "USD",
+) -> ProfileOut:
+    """Employee details, current compensation breakdown and full history (FR-2)."""
+    profile = employee_service.get_profile(db, employee_id, reporting_currency)
+    return ProfileOut(
+        employee=EmployeeOut.model_validate(profile.employee),
+        reporting_currency=profile.reporting_currency,
+        rates_as_of=profile.rates_as_of,
+        total_compensation=profile.total_compensation,
+        total_compensation_reporting=profile.total_compensation_reporting,
+        current=[
+            CurrentCompensationOut(
+                compensation_type_id=item.compensation_type.id,
+                name=item.compensation_type.name,
+                category=item.compensation_type.category,
+                subtype=item.compensation_type.subtype,
+                period_months=item.compensation_type.period_months,
+                is_base_pay=item.compensation_type.is_base_pay,
+                counts_toward_total=item.compensation_type.counts_toward_total,
+                record_id=item.record_id,
+                effective_date=item.effective_date,
+                amount=item.amount,
+                annual_amount=item.annual_amount,
+                annual_amount_reporting=item.annual_amount_reporting,
+            )
+            for item in profile.current
+        ],
+        history=[
+            HistoryItemOut(
+                record_id=item.record.id,
+                compensation_type_id=item.compensation_type.id,
+                compensation_type=item.compensation_type.name,
+                effective_date=item.record.effective_date,
+                country=item.record.country,
+                currency=item.record.currency,
+                amount=item.record.amount,
+                previous_amount=item.previous_amount,
+                percent_change=item.percent_change,
+                currency_changed=item.currency_changed,
+                change_reason=item.reason.code,
+                change_reason_label=item.reason.label,
+                note=item.record.note,
+                changed_by=item.record.changed_by,
+                created_at=item.record.created_at,
+            )
+            for item in profile.history
+        ],
+    )
+
+
+@router.patch("/employees/{employee_id}", response_model=EmployeeOut)
+def update_employee(employee_id: int, body: EmployeeUpdate, db: DbSession) -> Employee:
+    """Edit employee details. Compensation can't be changed here (FR-3)."""
+    with translate_db_errors(db):
+        employee = employee_service.update_employee(
+            db, employee_id, body.model_dump(exclude_unset=True)
+        )
+        db.commit()
+    db.refresh(employee)
+    return employee
+
+
+@router.post("/employees/{employee_id}/terminate", response_model=EmployeeOut)
+def terminate_employee(employee_id: int, body: TerminateIn, db: DbSession) -> Employee:
+    """Mark an employee terminated as of a date. They stay searchable; nothing is deleted."""
+    with translate_db_errors(db):
+        employee = employee_service.terminate_employee(
+            db, employee_id, body.termination_date
+        )
+        db.commit()
+    db.refresh(employee)
+    return employee
 
 
 @router.post(
@@ -113,17 +199,12 @@ def create_compensation_record(
     """Append a record in the employee's current country and currency.
 
     Records are append-only: there is deliberately no update or delete endpoint.
-    Phase 7 adds keeping `current_compensation` in step.
+    Current compensation follows records in effect today; Phase 7 adds the full
+    compensation-change workflow (future dates, validation before the DB).
     """
     employee = get_or_404(db, Employee, employee_id, "employee")
-    record = CompensationRecord(
-        **body.model_dump(),
-        employee_id=employee.id,
-        country=employee.current_country,
-        currency=employee.currency,
-    )
     with translate_db_errors(db):
-        db.add(record)
+        record = append_record(db, employee, **body.model_dump())
         db.commit()
     db.refresh(record)
     return record
