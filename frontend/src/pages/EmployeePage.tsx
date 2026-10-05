@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { api } from "../api/client";
+import { ApiError, api } from "../api/client";
 import type { HistoryItem, Profile } from "../api/types";
 import {
   ChangeCurrencyModal,
@@ -19,7 +19,12 @@ type Action = "edit" | "change" | "relocate" | "currency" | "terminate";
 export default function EmployeePage() {
   const { id } = useParams();
   const { currency } = useReporting();
-  const state = useAsync(() => api.get<Profile>(`/employees/${id}`, { reporting_currency: currency }), [id, currency]);
+  // A hand-typed address like /employees/abc is simply not an employee: don't ask the server.
+  const valid = /^[1-9]\d{0,17}$/.test(id ?? "");
+  const state = useAsync(
+    () => (valid ? api.get<Profile>(`/employees/${id}`, { reporting_currency: currency }) : Promise.reject(new ApiError(404, "There is no employee with that number."))),
+    [id, currency],
+  );
   const [action, setAction] = useState<Action | undefined>();
   const [message, setMessage] = useState<string | undefined>();
 

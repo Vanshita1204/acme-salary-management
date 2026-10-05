@@ -48,8 +48,8 @@ export function useAsync<T>(load: () => Promise<T>, deps: readonly unknown[]): A
   const current = settled.done && same(settled.deps, deps) && settled.tick === tick;
   return {
     data: settled.data,
-    // A failure belongs to the inputs that caused it; once they change, don't show it.
-    error: current || settled.done ? (same(settled.deps, deps) ? settled.error : undefined) : undefined,
+    // A failure belongs to the inputs that caused it; once they change or it reloads, don't show it.
+    error: current ? settled.error : undefined,
     loading: !current,
     reload,
   };

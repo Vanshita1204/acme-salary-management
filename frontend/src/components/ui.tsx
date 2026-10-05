@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Link } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { describeRates } from "../lib/format";
 import type { AsyncState } from "../lib/useAsync";
@@ -37,8 +38,16 @@ export function Loading({ label = "Loading…" }: { label?: string }) {
 }
 
 export function ErrorBox({ error, onRetry }: { error: ApiError; onRetry?: () => void }) {
+  // Retrying a "not found" can't help; point back to somewhere that works instead.
+  if (error.status === 404) {
+    return (
+      <Alert kind="warning" title="Not found">
+        {error.message} <Link to="/">Back to all employees</Link>
+      </Alert>
+    );
+  }
   return (
-    <Alert title="Something went wrong">
+    <Alert title={error.status === 0 || error.status >= 500 ? "Can't load this right now" : "Something went wrong"}>
       {error.message}
       {onRetry && (
         <>
@@ -50,13 +59,33 @@ export function ErrorBox({ error, onRetry }: { error: ApiError; onRetry?: () => 
   );
 }
 
-/** Loading, error or content for one request. Keeps old content visible while reloading. */
+/**
+ * Loading, error or content for one request. Old content stays visible (dimmed) while the
+ * next is loading, and if the next load fails it says so above the old content instead of
+ * letting figures that no longer match the filters pass as current.
+ */
 export function AsyncView<T>({ state, children, label }: { state: AsyncState<T>; children: (data: T) => ReactNode; label?: string }) {
   if (state.data !== undefined) {
-    return <div className={state.loading ? "reloading" : undefined} aria-busy={state.loading}>{children(state.data)}</div>;
+    return (
+      <>
+        {state.error && <StaleNotice error={state.error} onRetry={state.reload} />}
+        <div className={state.loading || state.error ? "reloading" : undefined} aria-busy={state.loading}>
+          {children(state.data)}
+        </div>
+      </>
+    );
   }
   if (state.error) return <ErrorBox error={state.error} onRetry={state.reload} />;
   return <Loading label={label} />;
+}
+
+function StaleNotice({ error, onRetry }: { error: ApiError; onRetry: () => void }) {
+  return (
+    <Alert title="Couldn't update this">
+      {error.message} What's shown below is from before and may not match your latest choices.{" "}
+      <button type="button" className="link" onClick={onRetry}>Try again</button>
+    </Alert>
+  );
 }
 
 export function Badge({ tone = "neutral", children }: { tone?: "neutral" | "good" | "warning" | "critical" | "info"; children: ReactNode }) {
@@ -82,12 +111,13 @@ export function RatesNote({ ratesAsOf, excluded = 0, currency }: { ratesAsOf: Re
   return (
     <p className="rates-note muted">
       {currency && <>All amounts in {currency}. </>}
-      {describeRates(ratesAsOf)}
+      {/* "No rates were needed" would contradict "left out for lack of a rate". */}
+      {Object.keys(ratesAsOf).length === 0 && excluded > 0 ? "" : describeRates(ratesAsOf)}
       {excluded > 0 && (
         <>
           {" "}
           <strong>
-            {excluded} employee{excluded === 1 ? " is" : "s are"} left out: no exchange rate is stored for {excluded === 1 ? "their" : "their"} currency.
+            {excluded} employee{excluded === 1 ? " is" : "s are"} left out: no exchange rate is stored for their currency.
           </strong>
         </>
       )}

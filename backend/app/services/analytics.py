@@ -17,6 +17,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     ColumnElement,
+    Numeric,
     Select,
     Text,
     and_,
@@ -80,6 +81,17 @@ def money(value) -> Decimal | None:
     return None if value is None else Decimal(value).quantize(CENT)
 
 
+ONE = literal(Decimal(1), Numeric)
+
+
+def to_reporting(currency, currency_rate, reporting_rate, reporting: str):
+    """Multiplier from an amount in `currency` to the reporting currency, through USD.
+
+    An amount already in the reporting currency needs no rate (and so works before any
+    rate has ever been stored); anything else needs both rates, and is NULL without them."""
+    return case((currency == reporting, ONE), else_=currency_rate / reporting_rate)
+
+
 def population(session: Session, query: DirectoryQuery, reporting: str) -> Select:
     """One row per active, matching employee with current compensation:
     ids for grouping, `total_local` (employee's currency) and `total` (reporting
@@ -100,7 +112,12 @@ def population(session: Session, query: DirectoryQuery, reporting: str) -> Selec
             Employee.current_country.label("country"),
             Employee.currency,
             totals.c.total.label("total_local"),
-            (totals.c.total * rates.c.rate_to_usd / reporting_rate).label("total"),
+            (
+                totals.c.total
+                * to_reporting(
+                    Employee.currency, rates.c.rate_to_usd, reporting_rate, reporting
+                )
+            ).label("total"),
         )
         .join(totals, totals.c.employee_id == Employee.id)
         .outerjoin(rates, rates.c.currency == Employee.currency)
@@ -475,8 +492,7 @@ def composition(
         CurrentCompensation.amount
         * 12
         / CompensationType.period_months
-        * rates.c.rate_to_usd
-        / reporting_rate
+        * to_reporting(pop.c.currency, rates.c.rate_to_usd, reporting_rate, reporting)
     )
     rows = session.execute(
         select(CompensationType.category, func.sum(annual))
@@ -486,7 +502,7 @@ def composition(
             CompensationType,
             CompensationType.id == CurrentCompensation.compensation_type_id,
         )
-        .join(rates, rates.c.currency == pop.c.currency)
+        .outerjoin(rates, rates.c.currency == pop.c.currency)
         .where(pop.c.total.is_not(None), CompensationType.counts_toward_total)
         .group_by(CompensationType.category)
         .order_by(func.sum(annual).desc())

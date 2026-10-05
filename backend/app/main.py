@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import InterfaceError, OperationalError
 
 from app.api import (
     analytics,
@@ -15,6 +16,25 @@ from app.api import (
 from app.services.errors import ServiceError
 
 app = FastAPI(title="ACME Salary Management")
+
+
+# What people see when something we didn't anticipate goes wrong. Never the exception text:
+# that can hold SQL, values or connection details. The server still logs the traceback.
+UNEXPECTED_ERROR = "Something went wrong on the server. Nothing you entered was lost: try again, and tell whoever runs this system if it keeps happening."
+DATABASE_UNAVAILABLE = "The database isn't reachable right now. Try again in a moment."
+
+
+@app.exception_handler(OperationalError)
+@app.exception_handler(InterfaceError)
+def database_unavailable(_: Request, __: Exception) -> JSONResponse:
+    """The database is down or the connection was lost (not a problem with the request)."""
+    return JSONResponse(status_code=503, content={"detail": DATABASE_UNAVAILABLE})
+
+
+@app.exception_handler(Exception)
+def unexpected_error(_: Request, __: Exception) -> JSONResponse:
+    """Any other failure: still JSON in the same shape as every other error."""
+    return JSONResponse(status_code=500, content={"detail": UNEXPECTED_ERROR})
 
 
 @app.exception_handler(ServiceError)

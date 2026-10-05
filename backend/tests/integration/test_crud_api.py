@@ -345,7 +345,11 @@ def test_history_is_newest_first(client, catalog, employee):
     history = client.get(url).json()
 
     # The automatic new-hire record from creation, plus the two added here.
-    assert [r["effective_date"] for r in history] == ["2025-04-01", "2024-01-15", "2024-01-15"]
+    assert [r["effective_date"] for r in history] == [
+        "2025-04-01",
+        "2024-01-15",
+        "2024-01-15",
+    ]
 
 
 @pytest.mark.parametrize(

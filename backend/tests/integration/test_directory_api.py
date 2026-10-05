@@ -342,7 +342,10 @@ def test_cursor_from_another_sort_is_rejected(client, world):
         "eyJzIjoibmFtZSIsIm8iOiJhc2MiLCJkIjoiYWZ0ZXIiLCJrIjpbImEiXX0",
     ],
 )
-def test_malformed_cursors_are_400(client, cursor):
+def test_malformed_cursors_are_400(client, db, cursor):
+    load_reference_data(
+        db
+    )  # the default reporting currency has to exist to get as far as the cursor
     assert client.get("/employees", params={"cursor": cursor}).status_code == 400
 
 

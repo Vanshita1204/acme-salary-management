@@ -473,3 +473,42 @@ def test_change_report_rejects_a_backwards_range(client, world):
         params={"date_from": "2025-02-01", "date_to": "2025-01-01"},
     )
     assert response.status_code == 422
+
+
+# --- before any exchange rate has ever been stored ---
+
+
+def test_amounts_already_in_the_reporting_currency_need_no_rate(db, client, world):
+    """A fresh install, before the first successful fetch, still has answers for USD pay."""
+    usd_people = [p for p in PEOPLE if p[4] == "USD"]
+    db.execute(text("DELETE FROM exchange_rates"))
+
+    result = get(client, world, "summary", reporting_currency="USD")
+
+    assert result["headcount"] == len(usd_people)
+    assert result["excluded_no_rate"] == len(PEOPLE) - len(
+        usd_people
+    )  # EUR and INR can't be converted
+    assert result["rates_as_of"] == {}
+    expected = sum(
+        in_currency(annual_totals()[p[0]][0], "USD", "USD") for p in usd_people
+    )
+    assert close(result["total_cost"], expected)
+    for view in ("stats", "histogram", "outliers", "role-by-country"):
+        assert (
+            client.get(
+                f"/analytics/{view}", params={"department_id": world["department_id"]}
+            ).status_code
+            == 200
+        )
+    composition = get(client, world, "composition", reporting_currency="USD")
+    assert {row["category"] for row in composition["categories"]} == {
+        "fixed",
+        "bonus",
+    }  # US employees' pay only
+    # Any reporting currency works the same way: people paid in it count, everyone else is
+    # left out and counted, never converted at an invented rate.
+    eur_people = [p for p in PEOPLE if p[4] == "EUR"]
+    other = get(client, world, "summary", reporting_currency="EUR")
+    assert other["headcount"] == len(eur_people)
+    assert other["excluded_no_rate"] == len(PEOPLE) - len(eur_people)
