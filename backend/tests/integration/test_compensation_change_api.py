@@ -53,7 +53,7 @@ def catalog(db):
 
 
 @pytest.fixture
-def employee(client, catalog) -> dict:
+def employee(client, catalog, org) -> dict:
     response = client.post(
         "/employees",
         json={
@@ -61,9 +61,7 @@ def employee(client, catalog) -> dict:
             "first_name": "Grace",
             "last_name": "Hopper",
             "email": f"{uuid.uuid4().hex[:10]}@pytest.example",
-            "department": "Engineering",
-            "job_title": "Engineer",
-            "job_level": "L3",
+            **org["role"],
             "current_country": "IN",
             "currency": "INR",
             "hire_date": HIRE,

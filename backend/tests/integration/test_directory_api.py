@@ -13,8 +13,11 @@ from app.models import (
     CompensationRecord,
     CompensationType,
     CurrentCompensation,
+    Department,
     Employee,
     ExchangeRate,
+    JobLevel,
+    JobTitle,
 )
 from app.seed.change_reasons import load_change_reasons
 from app.seed.companies import load_companies
@@ -42,7 +45,17 @@ def world(db):
     types = {(t.category, t.subtype): t for t in db.scalars(select(CompensationType))}
     reason = db.scalar(select(ChangeReason).where(ChangeReason.code == "new_hire"))
     company_id = db.scalar(select(Company.id).limit(1))
-    department = f"pytest-{uuid.uuid4().hex[:8]}"
+    # Private org entries, so other employees in the database never match the filters.
+    tag = uuid.uuid4().hex[:8]
+    department = Department(name=f"pytest-{tag}")
+    titles = {t: JobTitle(name=f"pytest-{t}-{tag}") for t in ("Engineer", "Manager")}
+    base_rank = 1_000_000 + uuid.uuid4().int % 1_000_000  # clear of real levels
+    levels = {
+        name: JobLevel(code=f"pytest-{name}-{tag}", label=name, rank=base_rank + n)
+        for n, name in enumerate(("junior", "mid", "senior"), start=1)
+    }
+    db.add_all([department, *titles.values(), *levels.values()])
+    db.flush()
 
     def hire(
         first,
@@ -55,15 +68,16 @@ def world(db):
         wellness=None,
         status="active",
         title="Engineer",
+        level="mid",
     ):
         employee = Employee(
             company_id=company_id,
             first_name=first,
             last_name=last,
             email=f"{uuid.uuid4().hex[:10]}@pytest.example",
-            department=department,
-            job_title=title,
-            job_level="L3",
+            department_id=department.id,
+            job_title_id=titles[title].id,
+            job_level_id=levels[level].id,
             current_country=country,
             currency=currency,
             status=status,
@@ -104,12 +118,21 @@ def world(db):
         "ada": hire(
             "Ada", "Lovelace", "GB", "EUR", date(2020, 3, 1), 8000, wellness=5000
         ),  # 96k EUR = 120k USD
-        "alan": hire("Alan", "Turing", "GB", "USD", date(2018, 6, 1), 9000),  # 108k USD
+        "alan": hire(
+            "Alan", "Turing", "GB", "USD", date(2018, 6, 1), 9000, level="senior"
+        ),  # 108k USD
         "grace": hire(
-            "Grace", "Hopper", "US", "USD", date(2022, 1, 10), 12500, title="Manager"
+            "Grace",
+            "Hopper",
+            "US",
+            "USD",
+            date(2022, 1, 10),
+            12500,
+            title="Manager",
+            level="senior",
         ),  # 150k USD
         "ravi": hire(
-            "Ravi", "Kumar", "IN", "INR", date(2021, 9, 1), 600000
+            "Ravi", "Kumar", "IN", "INR", date(2021, 9, 1), 600000, level="junior"
         ),  # 7.2M INR = 90k USD
         "edsger": hire(
             "Edsger",
@@ -121,12 +144,18 @@ def world(db):
             status="terminated",
         ),  # 84k EUR = 105k USD
     }
-    return {"department": department, "people": people}
+    return {
+        "department_id": department.id,
+        "titles": {name: t.id for name, t in titles.items()},
+        "levels": {name: lvl.id for name, lvl in levels.items()},
+        "base_rank": base_rank,
+        "people": people,
+    }
 
 
 def directory(client, world, **params):
     response = client.get(
-        "/employees", params={"department": world["department"], **params}
+        "/employees", params={"department_id": world["department_id"], **params}
     )
     assert response.status_code == 200, response.text
     return response.json()
@@ -189,7 +218,6 @@ def test_rates_as_of_covers_currencies_used(client, world):
         ({"country": "gb"}, ["Lovelace", "Turing"]),
         ({"country": ["GB", "IN"]}, ["Kumar", "Lovelace", "Turing"]),
         ({"status": "terminated"}, ["Dijkstra"]),
-        ({"job_title": "Manager"}, ["Hopper"]),
         ({"country": "GB", "q": "ada"}, ["Lovelace"]),
         ({"q": "grace hopper"}, ["Hopper"]),  # full name
         ({"q": "TURING"}, ["Turing"]),  # case-insensitive
@@ -198,6 +226,59 @@ def test_rates_as_of_covers_currencies_used(client, world):
 )
 def test_filters_and_search_combine(client, world, params, expected):
     assert last_names(directory(client, world, **params)) == expected
+
+
+def test_filter_by_title_and_level_ids(client, world):
+    assert last_names(
+        directory(client, world, job_title_id=world["titles"]["Manager"])
+    ) == ["Hopper"]
+    assert last_names(
+        directory(
+            client,
+            world,
+            job_level_id=[world["levels"]["junior"], world["levels"]["senior"]],
+        )
+    ) == ["Hopper", "Kumar", "Turing"]
+
+
+def test_filter_by_level_rank_range(client, world):
+    mid = world["base_rank"] + 2
+    assert last_names(directory(client, world, min_level_rank=mid)) == [
+        "Dijkstra",
+        "Hopper",
+        "Lovelace",
+        "Turing",
+    ]
+    assert last_names(
+        directory(client, world, min_level_rank=mid, max_level_rank=mid)
+    ) == ["Dijkstra", "Lovelace"]
+
+
+def test_sort_by_level_is_by_rank_then_name(client, world):
+    assert last_names(directory(client, world, sort="level")) == [
+        "Kumar",
+        "Dijkstra",
+        "Lovelace",
+        "Hopper",
+        "Turing",
+    ]
+    assert last_names(directory(client, world, sort="level", order="desc")) == [
+        "Turing",
+        "Hopper",
+        "Lovelace",
+        "Dijkstra",
+        "Kumar",
+    ]
+
+
+def test_items_carry_org_ids_and_names(client, world):
+    grace = next(
+        i for i in directory(client, world)["items"] if i["last_name"] == "Hopper"
+    )
+    assert grace["job_title_id"] == world["titles"]["Manager"]
+    assert grace["job_title"].startswith("pytest-Manager-")
+    assert grace["job_level_id"] == world["levels"]["senior"]
+    assert grace["department_id"] == world["department_id"]
 
 
 def test_search_by_code_and_email(client, world):
@@ -210,7 +291,12 @@ def test_search_by_code_and_email(client, world):
 
 @pytest.mark.parametrize(
     ("sort", "order"),
-    [("name", "asc"), ("hire_date", "desc"), ("compensation", "desc")],
+    [
+        ("name", "asc"),
+        ("hire_date", "desc"),
+        ("level", "asc"),
+        ("compensation", "desc"),
+    ],
 )
 def test_paging_forward_then_back_visits_every_row_once(client, world, sort, order):
     full = last_names(directory(client, world, sort=sort, order=order))

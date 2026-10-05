@@ -19,7 +19,10 @@ from app.models import (
     CompensationRecord,
     CompensationType,
     CurrentCompensation,
+    Department,
     Employee,
+    JobLevel,
+    JobTitle,
 )
 from app.services.compensation import (
     EMPLOYEE_NOT_FOUND,
@@ -43,6 +46,16 @@ RECORDS_AFTER_TERMINATION = (
     "employee has compensation records effective after the termination date"
 )
 TERMINATED_EMPLOYEE_UNEDITABLE = "terminated employees can't be edited"
+# Same wording as the database's FK rejection (app.api.db_errors.FOREIGN_KEY_MESSAGE).
+UNKNOWN_DEPARTMENT = "department does not exist"
+UNKNOWN_JOB_TITLE = "job title does not exist"
+UNKNOWN_JOB_LEVEL = "job level does not exist"
+
+ORG_REFERENCES = (
+    ("department_id", Department, UNKNOWN_DEPARTMENT),
+    ("job_title_id", JobTitle, UNKNOWN_JOB_TITLE),
+    ("job_level_id", JobLevel, UNKNOWN_JOB_LEVEL),
+)
 
 
 def get_employee(session: Session, employee_id: int) -> Employee:
@@ -61,6 +74,14 @@ def base_pay_type_id(session: Session) -> int:
     return found
 
 
+def check_org_references(session: Session, fields: dict) -> None:
+    """Department, title and level must be existing entries (Phase 7A)."""
+    for field, model, message in ORG_REFERENCES:
+        value = fields.get(field)
+        if value is not None and session.get(model, value) is None:
+            raise ServiceError(Problem.INVALID, message)
+
+
 # --- create / edit / terminate ---
 
 
@@ -77,6 +98,7 @@ def create_employee(
     Both rows go in one transaction, so an employee never exists without base pay.
     The record is effective on the hire date.
     """
+    check_org_references(session, fields)
     employee = Employee(**fields)
     session.add(employee)
     session.flush()  # constraint violations (email, company, country...) surface here
@@ -98,6 +120,7 @@ def update_employee(session: Session, employee_id: int, changes: dict) -> Employ
     employee = get_employee(session, employee_id)
     if employee.status == TERMINATED:
         raise ServiceError(Problem.CONFLICT, TERMINATED_EMPLOYEE_UNEDITABLE)
+    check_org_references(session, changes)
     for name, value in changes.items():
         setattr(employee, name, value)
     session.flush()

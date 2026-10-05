@@ -11,6 +11,9 @@ CONTEXT = ImportContext.build(
     countries=["IN", "US"],
     currencies=["INR", "USD"],
     existing_emails=["taken@example.com"],
+    departments={"Engineering": 10, "Sales": 11},
+    job_titles={"Software Engineer": 20, "Account Executive": 21},
+    job_levels={"L3": 30, "L4": 31},
 )
 
 
@@ -21,7 +24,7 @@ def record(**overrides) -> dict[str, str]:
         "email": "ada@example.com",
         "company": "Globex",
         "department": "Engineering",
-        "job_title": "Engineer",
+        "job_title": "Software Engineer",
         "job_level": "L3",
         "country": "IN",
         "hire_date": "2024-01-15",
@@ -48,6 +51,7 @@ def test_valid_file_parses_every_row():
     first, second = result.rows
     assert first.row == 2  # header is row 1
     assert first.company_id == 1
+    assert (first.department_id, first.job_title_id, first.job_level_id) == (10, 20, 30)
     assert first.hire_date == date(2024, 1, 15)
     assert first.base_pay_amount == Decimal(150000)
     assert (second.company_id, second.country, second.currency) == (2, "US", "USD")
@@ -75,6 +79,9 @@ def test_row_cap():
         ({"email": "not-an-email"}, "email", ci.INVALID_EMAIL),
         ({"email": "TAKEN@example.com"}, "email", ci.EMAIL_EXISTS),
         ({"company": "Umbrella"}, "company", ci.UNKNOWN_COMPANY),
+        ({"department": "Engineerin"}, "department", ci.UNKNOWN_DEPARTMENT),
+        ({"job_title": "SW Engineer"}, "job_title", ci.UNKNOWN_JOB_TITLE),
+        ({"job_level": "L10"}, "job_level", ci.UNKNOWN_JOB_LEVEL),
         ({"country": "QQ"}, "country", ci.UNKNOWN_COUNTRY),
         ({"currency": "XYZ"}, "currency", ci.UNSUPPORTED_CURRENCY),
         ({"hire_date": "15/01/2024"}, "hire_date", ci.INVALID_DATE),
@@ -110,3 +117,15 @@ def test_one_bad_row_makes_the_file_not_ok_and_reports_every_problem():
 
     assert not result.ok
     assert {(e.row, e.column) for e in result.errors} == {(3, "email"), (3, "currency")}
+
+
+def test_org_names_match_ignoring_case_and_whitespace():
+    result = run(
+        record(
+            department=" engineering ", job_title="SOFTWARE ENGINEER", job_level="l4"
+        )
+    )
+
+    assert result.ok
+    row = result.rows[0]
+    assert (row.department_id, row.job_title_id, row.job_level_id) == (10, 20, 31)

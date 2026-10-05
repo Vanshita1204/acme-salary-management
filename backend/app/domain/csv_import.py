@@ -1,7 +1,7 @@
 """CSV import validation (FR-5). Pure functions: no database or network access.
 
 The caller supplies everything that would need the database (known companies,
-currencies, countries, existing emails), so the whole file is validated in memory and
+departments, job titles and levels, currencies, countries, existing emails), so the whole file is validated in memory and
 every problem is reported with its row, column and reason before anything is saved.
 """
 
@@ -36,6 +36,9 @@ INVALID_EMAIL = "invalid email address"
 EMAIL_EXISTS = "an employee with this email already exists"
 EMAIL_DUPLICATED = "email also appears on row {row}"
 UNKNOWN_COMPANY = "unknown company"
+UNKNOWN_DEPARTMENT = "unknown department"
+UNKNOWN_JOB_TITLE = "unknown job title"
+UNKNOWN_JOB_LEVEL = "unknown job level"
 UNKNOWN_COUNTRY = "unknown country"
 UNSUPPORTED_CURRENCY = "unsupported currency"
 INVALID_DATE = "invalid date, expected YYYY-MM-DD"
@@ -58,9 +61,9 @@ class ImportRow:
     last_name: str
     email: str
     company_id: int
-    department: str
-    job_title: str
-    job_level: str
+    department_id: int
+    job_title_id: int
+    job_level_id: int
     country: str
     hire_date: date
     currency: str
@@ -72,6 +75,11 @@ class ImportContext:
     """Everything validation needs from the database, loaded once by the caller."""
 
     company_ids: Mapping[str, int]  # company name (any case) -> id
+    # Phase 7A reference lists, matched ignoring case. An unknown value is a row
+    # error: an import never creates departments, titles or levels.
+    department_ids: Mapping[str, int]
+    job_title_ids: Mapping[str, int]
+    job_level_ids: Mapping[str, int]  # level code -> id
     countries: frozenset[str]
     currencies: frozenset[str]
     existing_emails: frozenset[str]  # lowercase
@@ -83,9 +91,18 @@ class ImportContext:
         countries: Iterable[str],
         currencies: Iterable[str],
         existing_emails: Iterable[str],
+        departments: Mapping[str, int],
+        job_titles: Mapping[str, int],
+        job_levels: Mapping[str, int],
     ) -> "ImportContext":
+        def by_name(entries: Mapping[str, int]) -> dict[str, int]:
+            return {name.casefold(): id_ for name, id_ in entries.items()}
+
         return cls(
-            company_ids={name.casefold(): id_ for name, id_ in companies.items()},
+            company_ids=by_name(companies),
+            department_ids=by_name(departments),
+            job_title_ids=by_name(job_titles),
+            job_level_ids=by_name(job_levels),
             countries=frozenset(c.upper() for c in countries),
             currencies=frozenset(c.upper() for c in currencies),
             existing_emails=frozenset(e.casefold() for e in existing_emails),
@@ -162,9 +179,16 @@ def _validate_row(
             else:
                 first_seen[key] = row
 
-    company_id = context.company_ids.get(values["company"].casefold())
-    if values["company"] and company_id is None:
-        fail("company", UNKNOWN_COMPANY)
+    def lookup(column: str, ids: Mapping[str, int], reason: str) -> int | None:
+        found = ids.get(values[column].casefold())
+        if values[column] and found is None:
+            fail(column, reason)
+        return found
+
+    company_id = lookup("company", context.company_ids, UNKNOWN_COMPANY)
+    department_id = lookup("department", context.department_ids, UNKNOWN_DEPARTMENT)
+    job_title_id = lookup("job_title", context.job_title_ids, UNKNOWN_JOB_TITLE)
+    job_level_id = lookup("job_level", context.job_level_ids, UNKNOWN_JOB_LEVEL)
 
     country = values["country"].upper()
     if country and country not in context.countries:
@@ -204,9 +228,9 @@ def _validate_row(
             last_name=values["last_name"],
             email=email,
             company_id=company_id,
-            department=values["department"],
-            job_title=values["job_title"],
-            job_level=values["job_level"],
+            department_id=department_id,
+            job_title_id=job_title_id,
+            job_level_id=job_level_id,
             country=country,
             hire_date=hire_date,
             currency=currency,

@@ -59,12 +59,18 @@ def list_directory(
     q: Annotated[
         str | None, Query(description="Search name, email or employee code")
     ] = None,
-    department: Annotated[list[str] | None, Query()] = None,
+    department_id: Annotated[list[int] | None, Query()] = None,
     country: Annotated[list[str] | None, Query()] = None,
-    job_title: Annotated[list[str] | None, Query()] = None,
-    job_level: Annotated[list[str] | None, Query()] = None,
+    job_title_id: Annotated[list[int] | None, Query()] = None,
+    job_level_id: Annotated[list[int] | None, Query()] = None,
+    min_level_rank: Annotated[
+        int | None, Query(description="Only levels at or above this rank")
+    ] = None,
+    max_level_rank: Annotated[
+        int | None, Query(description="Only levels at or below this rank")
+    ] = None,
     status_: Annotated[list[Status] | None, Query(alias="status")] = None,
-    sort: Literal["name", "hire_date", "compensation"] = "name",
+    sort: Literal["name", "hire_date", "level", "compensation"] = "name",
     order: Literal["asc", "desc"] = "asc",
     cursor: Annotated[
         str | None, Query(description="next_cursor or prev_cursor")
@@ -73,16 +79,20 @@ def list_directory(
     reporting_currency: Annotated[str, Query(min_length=3, max_length=3)] = "USD",
 ) -> DirectoryPageOut:
     """Employee directory (FR-1). Filters combine with AND; repeat a filter for OR
-    within it (`?country=IN&country=US`). Paginate with the returned cursors."""
+    within it (`?country=IN&country=US`, `?department_id=1&department_id=4`).
+    Department, title and level filter by id (`GET /departments`, `/job-titles`,
+    `/job-levels`). Paginate with the returned cursors."""
     try:
         page = list_employees(
             db,
             DirectoryQuery(
                 q=q,
-                departments=department or [],
+                department_ids=department_id or [],
                 countries=country or [],
-                job_titles=job_title or [],
-                job_levels=job_level or [],
+                job_title_ids=job_title_id or [],
+                job_level_ids=job_level_id or [],
+                min_level_rank=min_level_rank,
+                max_level_rank=max_level_rank,
                 statuses=list(status_ or []),
                 sort=sort,
                 order=order,

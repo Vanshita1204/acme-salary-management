@@ -11,6 +11,7 @@ from app.seed.companies import load_companies
 from app.seed.compensation_types import load_compensation_types
 from app.seed.employees import seed_employees
 from app.seed.loaders import METHODS
+from app.seed.org_structure import load_org_structure
 from app.seed.reference import load_reference_data
 
 COUNT = 150
@@ -22,6 +23,7 @@ def reference(db):
     load_companies(db, 5)
     load_compensation_types(db)
     load_change_reasons(db)
+    load_org_structure(db)
 
 
 def test_seed_inserts_employees_records_and_current_compensation(db, reference):

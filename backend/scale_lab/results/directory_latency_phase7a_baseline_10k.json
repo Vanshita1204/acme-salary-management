@@ -1,0 +1,138 @@
+{
+  "environment": {
+    "machine": "Linux-6.18.44-fc-v70-x86_64-with-glibc2.39",
+    "cpu_count": 4,
+    "memory_gb": 16,
+    "postgres": "16.14 (Ubuntu 16.14-0ubuntu0.24.04.1)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "163848kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-05T10:32:08+00:00"
+  },
+  "overall_p95_ms": 65.3,
+  "requests": 300,
+  "queries": [
+    {
+      "params": {},
+      "median_ms": 16.6,
+      "p95_ms": 21.0
+    },
+    {
+      "params": {
+        "sort": "hire_date",
+        "order": "desc"
+      },
+      "median_ms": 15.7,
+      "p95_ms": 28.2
+    },
+    {
+      "params": {
+        "sort": "compensation",
+        "order": "desc"
+      },
+      "median_ms": 61.8,
+      "p95_ms": 81.0
+    },
+    {
+      "params": {
+        "sort": "compensation",
+        "order": "asc",
+        "reporting_currency": "INR"
+      },
+      "median_ms": 64.1,
+      "p95_ms": 74.0
+    },
+    {
+      "params": {
+        "department": "Engineering"
+      },
+      "median_ms": 18.3,
+      "p95_ms": 23.3
+    },
+    {
+      "params": {
+        "country": "IN",
+        "status": "active"
+      },
+      "median_ms": 14.9,
+      "p95_ms": 20.8
+    },
+    {
+      "params": {
+        "country": [
+          "US",
+          "GB"
+        ],
+        "job_level": "L4",
+        "sort": "hire_date"
+      },
+      "median_ms": 16.4,
+      "p95_ms": 19.0
+    },
+    {
+      "params": {
+        "department": "Sales",
+        "sort": "compensation",
+        "order": "desc"
+      },
+      "median_ms": 46.4,
+      "p95_ms": 62.3
+    },
+    {
+      "params": {
+        "job_title": "Software Engineer",
+        "country": "DE"
+      },
+      "median_ms": 14.6,
+      "p95_ms": 18.8
+    },
+    {
+      "params": {
+        "q": "an"
+      },
+      "median_ms": 15.0,
+      "p95_ms": 18.9
+    },
+    {
+      "params": {
+        "q": "kumar",
+        "country": "IN"
+      },
+      "median_ms": 28.2,
+      "p95_ms": 30.9
+    },
+    {
+      "params": {
+        "q": "EMP-0012"
+      },
+      "median_ms": 33.0,
+      "p95_ms": 38.2
+    },
+    {
+      "params": {
+        "q": "zzzz-no-match"
+      },
+      "median_ms": 43.4,
+      "p95_ms": 56.4
+    },
+    {
+      "params": {
+        "status": "terminated",
+        "sort": "hire_date",
+        "order": "desc"
+      },
+      "median_ms": 16.2,
+      "p95_ms": 18.9
+    },
+    {
+      "params": {
+        "limit": 200
+      },
+      "median_ms": 26.4,
+      "p95_ms": 29.6
+    }
+  ]
+}

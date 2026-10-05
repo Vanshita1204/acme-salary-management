@@ -37,9 +37,9 @@ erDiagram
         text first_name
         text last_name
         citext email UK
-        text department
-        text job_title
-        text job_level
+        bigint department_id FK
+        bigint job_title_id FK
+        bigint job_level_id FK
         char2 current_country FK
         char3 currency FK
         text status
@@ -47,6 +47,20 @@ erDiagram
         date termination_date
         timestamptz created_at
         timestamptz updated_at
+    }
+    DEPARTMENTS {
+        bigint id PK
+        citext name UK
+    }
+    JOB_TITLES {
+        bigint id PK
+        citext name UK
+    }
+    JOB_LEVELS {
+        bigint id PK
+        citext code UK
+        text label
+        integer rank UK
     }
     COMPENSATION_TYPES {
         bigint id PK
@@ -99,6 +113,9 @@ erDiagram
     COUNTRIES ||--o{ COMPENSATION_RECORDS : "country"
     CURRENCIES ||--o{ EMPLOYEES : "current currency"
     COMPANIES ||--o{ EMPLOYEES : "employs"
+    DEPARTMENTS ||--o{ EMPLOYEES : "department"
+    JOB_TITLES ||--o{ EMPLOYEES : "title"
+    JOB_LEVELS ||--o{ EMPLOYEES : "level"
     COMPENSATION_TYPES ||--o{ COMPENSATION_RECORDS : "typed as"
     COMPENSATION_TYPES ||--o{ CURRENT_COMPENSATION : "typed as"
     CHANGE_REASONS ||--o{ COMPENSATION_RECORDS : "reason"
@@ -144,9 +161,9 @@ CREATE TABLE employees (
     first_name        TEXT         NOT NULL,
     last_name         TEXT         NOT NULL,
     email             CITEXT       NOT NULL UNIQUE,   -- case-insensitive uniqueness
-    department        TEXT         NOT NULL,
-    job_title         TEXT         NOT NULL,
-    job_level         TEXT         NOT NULL,
+    department_id     BIGINT       NOT NULL REFERENCES departments(id),
+    job_title_id      BIGINT       NOT NULL REFERENCES job_titles(id),
+    job_level_id      BIGINT       NOT NULL REFERENCES job_levels(id),
     current_country   CHAR(2)      NOT NULL REFERENCES countries(code),
     currency          CHAR(3)      NOT NULL REFERENCES currencies(code),
     status            TEXT         NOT NULL
@@ -166,10 +183,10 @@ CREATE TABLE employees (
 );
 
 CREATE INDEX ix_employees_company          ON employees (company_id);
-CREATE INDEX ix_employees_department       ON employees (department);
+CREATE INDEX ix_employees_department       ON employees (department_id);
 CREATE INDEX ix_employees_country          ON employees (current_country);
-CREATE INDEX ix_employees_title            ON employees (job_title);
-CREATE INDEX ix_employees_level            ON employees (job_level);
+CREATE INDEX ix_employees_title            ON employees (job_title_id);
+CREATE INDEX ix_employees_level            ON employees (job_level_id);
 CREATE INDEX ix_employees_status           ON employees (status);
 CREATE INDEX ix_employees_hire_date        ON employees (hire_date, id);   -- supports sort-by-hire-date keyset
 CREATE INDEX ix_employees_name_search      ON employees (lower(last_name), lower(first_name));
@@ -178,7 +195,35 @@ CREATE INDEX ix_employees_name_search      ON employees (lower(last_name), lower
 - `currency` is the employee's single authoritative **current** pay currency. It's independent of `current_country` in the schema (no FK/check ties them together) even though the seed script will normally set it from `countries.default_currency` at hire time — this leaves room for an employee paid in a currency other than their country's default, without modeling it as a special case.
 - Every new `compensation_records` row for this employee must be recorded in this currency — enforced by a trigger on `compensation_records` (below), not by removing `currency` from that table. Each record still keeps its own `currency` column, so that if the employee's currency is changed later, every record already written keeps the currency it was actually paid in at the time; only new records pick up the new one. This mirrors how `current_country` vs. per-record `country` already works for relocation.
 - `termination_date` is nullable and tied to `status` by a same-row `CHECK` (no trigger needed, unlike the hire-date rule below, because both columns live on this table) — set exactly when `status = 'terminated'`, never otherwise, and never before `hire_date`.
+- Department, job title and level are foreign keys to lookup tables (Phase 7A, below), not free text.
 - The rest is unchanged from the original design (see prior revision for `code` generation and `CITEXT` rationale).
+
+### `departments`, `job_titles`, `job_levels` (Phase 7A)
+
+```sql
+CREATE TABLE departments (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name        CITEXT       NOT NULL UNIQUE,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+CREATE TABLE job_titles (  -- same shape as departments
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    name        CITEXT       NOT NULL UNIQUE,
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+CREATE TABLE job_levels (
+    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    code        CITEXT       NOT NULL UNIQUE,   -- 'L3', what HR sees
+    label       TEXT         NOT NULL,          -- 'Level 3'
+    rank        INTEGER      NOT NULL UNIQUE,   -- seniority order
+    created_at  TIMESTAMPTZ  NOT NULL DEFAULT now()
+);
+```
+- **Why lookup tables:** as free text, "Software Engineer", "software engineer" and "SW Engineer" were three roles, splitting grouped statistics, role-by-country and the title + level + country outlier peer groups (REQUIREMENTS §1 names inconsistent department/title names as a problem to solve). `CITEXT UNIQUE` makes a case-variant duplicate impossible at the database, the same way `employees.email` works.
+- **Titles are universal, not tied to a department** — like the compensation-type catalog. "Analyst" is a real title in Finance and Operations; a department link would force duplicates or block moves between departments.
+- **`rank`** gives levels a real order: levels sort as `L2` before `L10`, and the directory filters by rank range ("L4 and above").
+- **No delete** (employees point at every row); renaming is allowed — it's a label, nothing numeric or historical changes.
+- **Not dated:** a promotion overwrites `employees.job_level_id`, so past levels aren't recorded. A dated role history is a candidate for a later phase.
 
 ---
 
@@ -368,6 +413,7 @@ CREATE INDEX ix_exchange_rates_latest ON exchange_rates (currency, rate_date DES
 | `period_months` must be a positive number of months | `CHECK (period_months > 0)` on `compensation_types` |
 | Termination date set iff status = terminated, never before hire date | same-row `CHECK` constraints on `employees` |
 | Employee email unique | `CITEXT UNIQUE` on `employees.email` |
+| Department / title / level from a controlled list, no case-variant duplicates | FKs from `employees` to `departments` / `job_titles` / `job_levels`; `CITEXT UNIQUE` names, `UNIQUE (rank)` on levels |
 | Employee code unique | `UNIQUE` on `employees.code` |
 | Currency must be supported | FK to `currencies.code` |
 | Country must be valid | FK to `countries.code` |
@@ -380,7 +426,7 @@ CREATE INDEX ix_exchange_rates_latest ON exchange_rates (currency, rate_date DES
 
 | Access pattern | Index |
 |---|---|
-| Filter by department / country / title / level / status / company | one btree index per column (composable via bitmap AND) |
+| Filter by department / country / title / level / status / company | one btree index per column (department, title and level by id; composable via bitmap AND) |
 | Sort by name (keyset) | `(lower(last_name), lower(first_name))` |
 | Sort by hire date (keyset) | `(hire_date, id)` |
 | Sort by total compensation (keyset) | no single index — `SUM(...) GROUP BY employee_id` over `current_compensation` (see open trade-off above) |
@@ -389,7 +435,7 @@ CREATE INDEX ix_exchange_rates_latest ON exchange_rates (currency, rate_date DES
 | Latest rate per currency | `(currency, rate_date DESC)` on `exchange_rates` |
 
 ## Migration note
-Updated dependency order for Phase 1: `currencies` → `countries` → `companies` → `compensation_types` → `change_reasons` (no FK to `compensation_types`) → `employees` → `compensation_records` (+ validation trigger + append-only trigger) → `current_compensation` → `exchange_rates`. `compensation_types` no longer depends on `companies` — it's listed in this order for convenience, not because of an FK. Each as its own Alembic revision. Validate as integration tests immediately after: negative/zero amount on the `is_base_pay` type, zero/negative `period_months`, a nonexistent change reason, a duplicate reason code, a record whose `currency` doesn't match `employees.currency`, a second row with `is_base_pay = true` (should fail globally, not just per company), `termination_date` set without `status = 'terminated'`, and direct `UPDATE`/`DELETE` against `compensation_records`. Also add a unit test (pure function, no DB) for `annualize(amount, period_months)` covering monthly/quarterly/semi-annual/annual inputs.
+Updated dependency order for Phase 1: `currencies` → `countries` → `companies` → `compensation_types` → `change_reasons` (no FK to `compensation_types`) → `employees` → `compensation_records` (+ validation trigger + append-only trigger) → `current_compensation` → `exchange_rates`. `compensation_types` no longer depends on `companies` — it's listed in this order for convenience, not because of an FK. Each as its own Alembic revision. Phase 7A added `0011_org_structure` (`departments`, `job_titles`, `job_levels`, and the `employees` FKs), which backfills existing employees in place. Validate as integration tests immediately after: negative/zero amount on the `is_base_pay` type, zero/negative `period_months`, a nonexistent change reason, a duplicate reason code, a record whose `currency` doesn't match `employees.currency`, a second row with `is_base_pay = true` (should fail globally, not just per company), `termination_date` set without `status = 'terminated'`, and direct `UPDATE`/`DELETE` against `compensation_records`. Also add a unit test (pure function, no DB) for `annualize(amount, period_months)` covering monthly/quarterly/semi-annual/annual inputs.
 
 ---
 

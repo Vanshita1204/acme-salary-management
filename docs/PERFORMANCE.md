@@ -131,6 +131,15 @@ The two history-based strategies were run with and without the composite index `
   - `ILIKE '%term%'` search can't use a B-tree index, so a selective term scans all employees. That's Scale Lab E4 (`pg_trgm`).
 - Neither needs fixing for the 10k submission; both are the first changes needed to scale past it.
 
+**Re-measured after Phase 7A** (department/title/level became FK lookups; the mix gained two level-sort/rank-filter requests, 17 combinations). Run on a different, slower machine than the table above, so both versions were measured there on the same 10k data:
+
+| | p95 (same machine) |
+|---|---|
+| Before 7A (`directory_latency_phase7a_baseline_10k.json`) | 65 ms |
+| After 7A (`directory_latency_phase7a_10k.json`) | 70–73 ms |
+
+About 5–10% slower — the employee rows now join three tiny lookup tables for their names — and still far under the 500 ms target. The new sort by level and rank-range filter run at 22–26 ms median.
+
 ---
 
 ## Summary — what the lab confirmed or changed

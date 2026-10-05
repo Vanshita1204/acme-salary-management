@@ -28,9 +28,13 @@ from app.models import (
     Company,
     CompensationType,
     Country,
+    Department,
     Employee,
+    JobLevel,
+    JobTitle,
 )
 from app.seed.loaders import EMPLOYEE_LOADERS, METHODS, RECORD_LOADERS, Method
+from app.seed.org_structure import DEPARTMENT_TITLES, JOB_TITLES, LEVEL_CODES
 
 DEFAULT_COUNT = 10_000
 DEFAULT_SEED = 1204
@@ -82,20 +86,19 @@ USD_PAID_SHARE = {"AE": 0.15, "SG": 0.05, "MX": 0.05}
 # the generated data doesn't change with live exchange rates.
 SEED_USD_PER_LOCAL = {"AE": 0.27, "SG": 0.74, "MX": 0.055}
 
-# department -> (weight, pay multiplier, titles)
+# department -> (weight, pay multiplier, titles); names come from app.seed.org_structure.
+DEPARTMENT_PAY: dict[str, tuple[int, float]] = {
+    "Engineering": (34, 1.00),
+    "Product": (8, 1.05),
+    "Sales": (12, 0.90),
+    "Marketing": (7, 0.85),
+    "Finance": (6, 0.90),
+    "People": (5, 0.80),
+    "Operations": (8, 0.75),
+    "Customer Support": (20, 0.60),
+}
 DEPARTMENTS: dict[str, tuple[int, float, list[str]]] = {
-    "Engineering": (
-        34,
-        1.00,
-        ["Software Engineer", "QA Engineer", "DevOps Engineer", "Data Engineer"],
-    ),
-    "Product": (8, 1.05, ["Product Manager", "Product Designer"]),
-    "Sales": (12, 0.90, ["Account Executive", "Sales Development Representative"]),
-    "Marketing": (7, 0.85, ["Marketing Manager", "Content Strategist"]),
-    "Finance": (6, 0.90, ["Financial Analyst", "Accountant"]),
-    "People": (5, 0.80, ["People Partner", "Recruiter"]),
-    "Operations": (8, 0.75, ["Operations Analyst", "Office Manager"]),
-    "Customer Support": (20, 0.60, ["Support Specialist", "Support Team Lead"]),
+    name: (*DEPARTMENT_PAY[name], titles) for name, titles in DEPARTMENT_TITLES.items()
 }
 
 # level -> (weight, pay multiplier vs L3, annual bonus target as share of base)
@@ -145,6 +148,9 @@ class Catalog:
     currencies: dict[str, str]  # country -> default currency
     types: dict[str, int]  # TYPE_KEYS key -> compensation_types.id
     reasons: dict[str, int]  # code -> change_reasons.id
+    departments: dict[str, int]  # name -> departments.id
+    job_titles: dict[str, int]  # name -> job_titles.id
+    job_levels: dict[str, int]  # code -> job_levels.id
 
 
 def load_catalog(session: Session) -> Catalog:
@@ -169,6 +175,18 @@ def load_catalog(session: Session) -> Catalog:
         ).all()
     )
 
+    # CITEXT names: look up case-insensitively, keyed by the seed's spelling.
+    def ids_by_name(column, key, names) -> dict[str, int]:
+        found = {
+            name.lower(): id_
+            for name, id_ in session.execute(select(column, key)).all()
+        }
+        return {n: found[n.lower()] for n in names if n.lower() in found}
+
+    departments = ids_by_name(Department.name, Department.id, DEPARTMENT_TITLES)
+    job_titles = ids_by_name(JobTitle.name, JobTitle.id, JOB_TITLES)
+    job_levels = ids_by_name(JobLevel.code, JobLevel.id, LEVEL_CODES)
+
     missing = []
     if not company_ids:
         missing.append("companies (python -m app.seed.companies)")
@@ -177,6 +195,10 @@ def load_catalog(session: Session) -> Catalog:
         f"compensation type {k}" for k, v in TYPE_KEYS.items() if v not in by_key
     ]
     missing += [f"change reason {c}" for c in REASON_CODES if c not in reasons]
+    org = "(python -m app.seed.org_structure)"
+    missing += [f"department {n} {org}" for n in DEPARTMENT_TITLES if n not in departments]
+    missing += [f"job title {n} {org}" for n in JOB_TITLES if n not in job_titles]
+    missing += [f"job level {c} {org}" for c in LEVEL_CODES if c not in job_levels]
     if missing:
         raise SystemExit(
             "Reference data missing — run the Phase 1.2 seeds first:\n  "
@@ -187,6 +209,9 @@ def load_catalog(session: Session) -> Catalog:
         currencies=currencies,
         types={k: by_key[v] for k, v in TYPE_KEYS.items()},
         reasons=reasons,
+        departments=departments,
+        job_titles=job_titles,
+        job_levels=job_levels,
     )
 
 
@@ -296,9 +321,9 @@ class Generator:
             "first_name": first,
             "last_name": last,
             "email": f"{ascii_slug(first)}.{ascii_slug(last)}.{index}@{self.email_domain}",
-            "department": department,
-            "job_title": rng.choice(titles),
-            "job_level": level,
+            "department_id": self.catalog.departments[department],
+            "job_title_id": self.catalog.job_titles[rng.choice(titles)],
+            "job_level_id": self.catalog.job_levels[level],
             "current_country": country,
             "currency": currency,
             "status": status,
@@ -455,7 +480,7 @@ def seed_employees(
         raise SystemExit(
             "Employees already exist. Compensation history is append-only, so seed into "
             "a fresh database: alembic downgrade base && alembic upgrade head, then the "
-            "Phase 1.2 seeds."
+            "Phase 1.2 seeds and app.seed.org_structure."
         )
     catalog = load_catalog(session)
     generator = Generator(catalog, seed, as_of, email_domain)

@@ -70,10 +70,16 @@ def python(*module_args: str) -> tuple[str, ...]:
 
 
 def prepare_reference(database: str) -> None:
-    """Fresh schema plus the Phase 1.2 reference data, ready for an employee seed."""
+    """Fresh schema plus the Phase 1.2 and 7A reference data, ready for an employee seed."""
     recreate_database(database)
     run_app(database, sys.executable, "-m", "alembic", "upgrade", "head")
-    for module in ("reference", "companies", "compensation_types", "change_reasons"):
+    for module in (
+        "reference",
+        "companies",
+        "compensation_types",
+        "change_reasons",
+        "org_structure",
+    ):
         run_app(database, *python(f"app.seed.{module}"))
 
 

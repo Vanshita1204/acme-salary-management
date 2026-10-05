@@ -28,6 +28,8 @@ MIX: list[dict] = [
     {"country": ["US", "GB"], "job_level": "L4", "sort": "hire_date"},
     {"department": "Sales", "sort": "compensation", "order": "desc"},
     {"job_title": "Software Engineer", "country": "DE"},
+    {"sort": "level", "order": "desc"},
+    {"min_level_rank": 5, "department": "Engineering", "sort": "level"},
     {"q": "an"},
     {"q": "kumar", "country": "IN"},
     {"q": "EMP-0012"},
@@ -41,10 +43,31 @@ def p95(samples: list[float]) -> float:
     return statistics.quantiles(samples, n=100, method="inclusive")[94]
 
 
+# The mix names departments, titles and levels for readability; the API filters by id.
+ORG_FILTERS = {
+    "department": ("department_id", "/departments", "name"),
+    "job_title": ("job_title_id", "/job-titles", "name"),
+    "job_level": ("job_level_id", "/job-levels", "code"),
+}
+
+
+def resolve(client: TestClient, params: dict) -> dict:
+    resolved = {}
+    for key, value in params.items():
+        if key not in ORG_FILTERS:
+            resolved[key] = value
+            continue
+        param, path, field = ORG_FILTERS[key]
+        ids = {entry[field]: entry["id"] for entry in client.get(path).json()}
+        resolved[param] = ids[value]
+    return resolved
+
+
 def run(runs: int) -> dict:
     client = TestClient(app)
     per_query, everything = [], []
-    for params in MIX:
+    for named in MIX:
+        params = resolve(client, named)
         first = client.get("/employees", params=params).json()  # warm-up
         samples = []
         for i in range(runs):
@@ -59,13 +82,13 @@ def run(runs: int) -> dict:
         everything += samples
         per_query.append(
             {
-                "params": params,
+                "params": named,
                 "median_ms": round(statistics.median(samples), 1),
                 "p95_ms": round(p95(samples), 1),
             }
         )
         lab.log(
-            f"{params!s:<75} median {per_query[-1]['median_ms']:>7} ms  p95 {per_query[-1]['p95_ms']:>7} ms"
+            f"{named!s:<75} median {per_query[-1]['median_ms']:>7} ms  p95 {per_query[-1]['p95_ms']:>7} ms"
         )
     overall = round(p95(everything), 1)
     lab.log(

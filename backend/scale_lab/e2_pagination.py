@@ -16,7 +16,7 @@ from scale_lab import lab
 PAGE = 50
 NAME_ORDER = "lower(last_name), lower(first_name), id"
 HIRE_ORDER = "hire_date, id"
-COLUMNS = "id, code, first_name, last_name, department, job_title, job_level, current_country, status, hire_date"
+COLUMNS = "id, code, first_name, last_name, department_id, job_title_id, job_level_id, current_country, status, hire_date"
 NAME_WITH_ID_INDEX = "lab_ix_employees_name_id"
 
 

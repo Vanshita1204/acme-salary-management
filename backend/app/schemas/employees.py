@@ -37,9 +37,9 @@ class EmployeeIn(BaseModel):
     first_name: NonEmpty
     last_name: NonEmpty
     email: EmailStr
-    department: NonEmpty
-    job_title: NonEmpty
-    job_level: NonEmpty
+    department_id: int
+    job_title_id: int
+    job_level_id: int
     current_country: CountryCode
     currency: CurrencyCode
     status: ActiveStatus = "active"
@@ -58,9 +58,9 @@ class EmployeeUpdate(BaseModel):
     first_name: NonEmpty | None = None
     last_name: NonEmpty | None = None
     email: EmailStr | None = None
-    department: NonEmpty | None = None
-    job_title: NonEmpty | None = None
-    job_level: NonEmpty | None = None
+    department_id: int | None = None
+    job_title_id: int | None = None
+    job_level_id: int | None = None
     status: ActiveStatus | None = None
 
 
@@ -77,9 +77,12 @@ class EmployeeOut(ORMModel):
     first_name: str
     last_name: str
     email: str
-    department: str
-    job_title: str
-    job_level: str
+    department_id: int
+    department: str  # name
+    job_title_id: int
+    job_title: str  # name
+    job_level_id: int
+    job_level: str  # code
     current_country: str
     currency: str
     status: Status
@@ -132,8 +135,11 @@ class DirectoryItem(BaseModel):
     first_name: str
     last_name: str
     email: str
+    department_id: int
     department: str
+    job_title_id: int
     job_title: str
+    job_level_id: int
     job_level: str
     current_country: str
     status: Status
