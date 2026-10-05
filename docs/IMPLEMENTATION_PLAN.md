@@ -93,12 +93,32 @@ Lives under `backend/app/domain/`, unit-tested under `backend/tests/unit/` (no d
   - Tests use fixed exchange-rate fixtures, never live rates.
   - `annualize` is tested for monthly/quarterly/semi-annual/annual (and 24-month) periods.
 
-## Phase 3 — Seed script (10,000-employee synthetic dataset)
+## Phase 3 — Seed script (10,000-employee synthetic dataset) — Done
 Distinct from Phase 1.2's reference-data pre-population — this generates the large synthetic employee population on top of it.
-- Deterministic (`--seed` flag, default fixed), `--count` flag for Scale Lab reuse.
-- Assigns each employee a company (from Phase 1.2's seeded rows), a country-appropriate currency, and role/level-based amounts for a representative subset of the compensation-type catalog; generates realistic compensation history per employee (hire + a few revisions per type), consistent with the domain layer from Phase 2.
-- Batched inserts first; revisit with `COPY` based on Phase 4's E1 result.
-- **Done when:** `python -m seed --count 10000` populates a fresh, already-reference-seeded DB in a bounded time and produces data the directory/analytics endpoints (Phases 5, 8) can be built against.
+- **Command:** `python -m app.seed.employees [--count N] [--seed S] [--as-of YYYY-MM-DD] [--batch-size B]` (defaults: 10,000 / 1204 / today / 5,000).
+- **Deterministic:** the same count, seed, as-of date and pinned Faker version produce identical data. Seed-only constants (pay levels, the USD rates for USD-paid staff) never read live exchange rates.
+- **Fresh databases only:** refuses to run if employees exist. History is append-only and can't be cleared selectively, so the reset is `alembic downgrade base && alembic upgrade head` plus the 1.2 seeds. It fails with a list of what's missing if 1.2 hasn't run.
+- **Population:**
+  - 16 hiring countries, weighted (India 30%, US 18%, UK 8%, …), each with a Faker locale for names and a typical local L3 salary.
+  - Currency is the country's default, except a share of UAE/Singapore/Mexico staff paid in USD.
+  - 8 departments with pay multipliers and titles; levels L1–L7.
+  - Status ~86% active / 4% on leave / 10% terminated (termination date between hire + 90 days and the as-of date).
+  - Hire dates from 2012, skewed toward recent years.
+  - Each employee belongs to one of the seeded companies.
+  - ~3% are deliberate pay outliers, so Phase 12 has something to find.
+- **History:**
+  - Base pay: new hire, then 1 April annual revisions (3–9%) or occasional promotions (12–20%), plus rare corrections. The starting salary is solved backwards so today's pay lands near the market level.
+  - Bonuses: Sales gets a variable-pay target and quarterly payouts; everyone else from L2 up gets an annual bonus.
+  - Equity: L4+ engineering/product staff get RSU hire grants and annual refreshes.
+  - Allowances: housing/transport/meal where customary, revised with each review.
+  - Reimbursements: internet for everyone (inside or outside CTC per company policy), learning/wellness for some.
+  - Nothing is dated after termination or the as-of date. Every row passes the DB triggers (hire date, currency, base pay > 0).
+- **Inserts:** batched multi-row `INSERT`s (employees with `RETURNING id`, then records). `current_compensation` is filled in one `DISTINCT ON` statement for the inserted employees. Revisit with `COPY` based on Phase 4's E1 result.
+- **Done when (verified):** 10,000 employees, ~180,000 compensation records and ~43,700 current-compensation rows in ~18 s on the docker-compose Postgres. Checks:
+  - Every employee has exactly one current base-pay row, and no record falls after a termination date.
+  - Local medians are plausible (e.g. India ₹21 L base, US $124 k).
+  - `tests/unit/test_employee_seed.py` covers determinism and history invariants without a DB; `tests/integration/test_employee_seed_db.py` runs a 150-employee seed in a rolled-back transaction.
+- **Known simplification:** no relocations or currency changes in the generated history — those need FR-7's ordering (update the employee, then write records) and come with Phase 11.
 
 ## Phase 4 — Scale Lab, Phase 1 experiments (before submission)
 Per `docs/SCALE_LAB.md` E1–E3, run at S (10k) and at least M (1M):

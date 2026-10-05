@@ -7,7 +7,7 @@ All results come from **synthetic data on a single local machine**. They demonst
 
 ## Setup
 - **Database:** PostgreSQL in Docker, same version as the deployed instance, default configuration unless an experiment states otherwise.
-- **Data:** the application's seed script with a size flag, e.g. `python -m seed --count 1000000`. Fixed random seed, so every run produces identical data.
+- **Data:** the application's seed script with a size flag, e.g. `python -m app.seed.employees --count 1000000`. Fixed random seed, so every run produces identical data.
 - **Hardware:** CPU, RAM, disk type, and Postgres settings recorded alongside every result.
 
 | Dataset | Employees | Compensation records (~3 per employee) |

@@ -6,14 +6,16 @@ A curated record of how AI tools were used in this project: what they produced, 
 | Tool | Used for |
 |---|---|
 | Claude (chat) | Requirements analysis, clarifying questions, scope decisions, design review |
-| _[agentic coding tool]_ | Implementation, tests, refactoring |
+| Claude Code (CLI agent) | Implementation, migrations, seed scripts, tests, refactoring, doc updates |
 
 Instructions given to the coding agent are committed in _[e.g. `CLAUDE.md`]_.
 
 ## How I Worked with AI
 - Requirements and scope were settled before any code was written; early scaffold code generated before scope was confirmed was discarded.
 - AI suggestions were checked against the assessment brief and Incubyte's clarifications, not accepted on plausibility.
-- _[Add: test-first workflow, how generated code was reviewed, how correctness was verified]_
+- Implementation went phase by phase against `docs/IMPLEMENTATION_PLAN.md`, and the plan, `DATABASE_DESIGN.md` and `REQUIREMENTS.md` were updated in the same step whenever a decision changed them.
+- Each change was verified by running it, not by reading it: the test suite against a real Postgres (unit tests for pure domain logic, integration tests for constraints and the API), `alembic check` plus migration round-trips for schema changes, and live calls against the seeded database for endpoints.
+- Where the right behavior was my call (reason model, CTC rules, migration strategy), the agent asked instead of guessing; where I disagreed with its default, I said so and it was redone (items 18, 20–22).
 
 ---
 
@@ -95,7 +97,60 @@ Instructions given to the coding agent are committed in _[e.g. `CLAUDE.md`]_.
 - **Decision:** No schema or spec change; confirmed the existing design already prevents this bug, rather than needing a fix.
 
 ### Phase 3 — Implementation
-_[Add entries as you build: what the agent generated, what you changed, bugs it introduced, tests that caught them.]_
+
+**15. Hardcoded connection strings moved to `.env`, and a Postgres gotcha it exposed**
+- **Prompt:** "extract all urls from .env. remove hardcoding"
+- **AI output:** Made `DATABASE_URL` a required setting (no in-code default), removed the URL from `alembic.ini`, and had docker-compose read the Postgres credentials from `backend/.env`.
+- **Follow-up bug:** After the password in `.env` was changed, every connection failed with "password authentication failed." Postgres only applies `POSTGRES_PASSWORD` when the data volume is first created, so the running database still had the old password. Fixed with `ALTER ROLE`, and documented in the plan.
+- **Lesson:** Config that's read once at initialization (a database volume) doesn't follow later `.env` edits.
+
+**16. Migrations: AI edited a pushed migration, then the project chose to fold fixes back in**
+- **AI output:** To widen `exchange_rates.rate_to_usd`, the AI first edited migration `0009` in place, assuming it wasn't committed. It then saw `0009` had already been pushed, reverted the edit, and added a follow-up migration (`0010`), later a second one (`0011`) for change reasons.
+- **Decision:** No database outside development had been migrated yet, so I asked for the follow-up migrations to be removed and the fixes folded into the create migrations (`0005`, `0007`, `0009`). The dev database was rebuilt from scratch.
+- **Lesson:** Editing applied migrations is normally wrong, but it's the cleaner choice before any shared database exists. Decide it explicitly; don't let it happen by accident.
+
+**17. Exchange-rate precision bug caught from real data**
+- **AI output:** The schema stored `rate_to_usd` as `NUMERIC(18,8)`. Before wiring up storage, the AI checked the live provider's quotes and found the Iranian rial (~1.48M per USD) would be stored as 0.00000068 instead of 0.000000676 — a 0.7% error on every conversion.
+- **Correction:** Widened to `NUMERIC(24,16)` (~9 significant digits for every currency), with a unit test on round-trip precision.
+- **Lesson:** Check numeric precision against the extreme values in real data, not typical ones.
+
+**18. Country and currency lists: hand-picked → generated file → third-party packages at runtime**
+- **AI output:** First seeded 18 hand-picked countries and 14 currencies, then generated the full ISO list from pycountry + babel once and committed it as a static file.
+- **Correction:** I asked for the lists to come from the packages directly, so updating means upgrading a package rather than editing data. `app/seed/iso_data.py` now reads pycountry (codes, currency names) and babel/CLDR (country names, each country's legal tender) when seeding.
+- **AI caught:** babel's CLDR data still listed Bulgaria as BGN after it adopted the euro in January 2026 (pycountry had already dropped BGN). Handled with a small, documented `CURRENCY_OVERRIDES` entry.
+
+**19. Live exchange rates without an API call per dashboard refresh**
+- **Prompt:** "implement a live currency converter", then "i dont want api call each time dashboard is refreshed"
+- **AI output:** Conversions already read only stored rates (per the resilience requirement). The remaining gap was a dashboard calling the refresh endpoint on every load.
+- **Decision:** Refresh is throttled to once per 24 hours (the provider publishes daily) and returns `skipped: true` otherwise; `force` overrides. Tests fake the provider with `httpx.MockTransport` and use far-future rate dates, so they never depend on the live API or collide with real stored rates.
+
+**20. Change reasons belong to the record, not the compensation type**
+- **AI output (earlier design, item 9):** Change reasons were scoped per compensation type and enforced with a composite foreign key.
+- **Correction:** "change reason should not be compensation type dependent. it should be record dependent." Replaced with one shared `change_reasons` list any record can use. I chose a lookup list over free text because rules depend on specific codes (`new_hire`, `relocation`, `correction`); a seed smoke check guarantees those exist.
+- **Lesson:** Item 9 had read "each type has its own change reasons" too literally; the reason describes why a record changed, which is independent of what kind of pay it is.
+
+**21. Reimbursements and total compensation (CTC)**
+- **AI output:** Raised an open question: should reimbursement types count toward total compensation? It recommended excluding the whole `reimbursement` category.
+- **Correction:** "some companies involve reimbursement for wifi for example in the ctc." A category-wide rule can't fit both kinds of employer. Added a per-type `counts_toward_total` flag (base pay must count, enforced by a check constraint), with a toggle in the planned "Add compensation type" form, and seeded both an in-CTC and an outside-CTC internet reimbursement.
+
+**22. Per-constraint error messages → generic templates**
+- **AI output:** The API translated database constraint violations into 409/422 responses using a hand-written message for each constraint name.
+- **Correction:** "use constants etc. dont hardcode error message for each model." Messages are now a few templates (`UNIQUE_MESSAGE`, `FOREIGN_KEY_MESSAGE`, `CHECK_MESSAGE`, …), filled in from the SQLAlchemy metadata of whichever constraint failed. `Base` uses Postgres's default constraint naming so model and database names match.
+- **Bug caught by tests:** The first version checked `psycopg.errors.IntegrityConstraintViolation`, but psycopg's specific violations inherit from `IntegrityError` directly, so every violation escaped as a 500. The API tests failed immediately; fixed by checking `psycopg.IntegrityError`.
+- **Trade-off accepted:** check-constraint messages are less specific ("employee rule violated: termination after hire").
+
+**23. Smaller bugs the agent introduced or hit, and how they were caught**
+- **Alembic revision ID too long:** `0010_widen_exchange_rate_precision` exceeded `alembic_version.version_num`'s 32 characters; the upgrade failed and rolled back cleanly. Renamed.
+- **Migrations silenced app logging:** `alembic`'s `fileConfig()` disabled existing loggers, so a test asserting a "keeping latest stored rates" warning saw nothing. Fixed with `disable_existing_loggers=False`.
+- **Validation order:** a change-reason code with capitals was rejected instead of lowercased, because pydantic checked the pattern before normalizing. Caught by an API test.
+- **Formatter noise:** running `ruff format` reflowed committed model files that had been written at a wider line length. The AI reverted the formatting and kept only real changes.
+- **Stray folder:** a nested, empty `acme-salary-management/` with two empty git repos, left by a setup command run from inside the project.
+
+**24. Verification habits that paid off**
+- Every migration change was checked with `alembic check` (no drift between models and schema) and a full `downgrade base` → `upgrade head` round-trip.
+- The change-reason merge migration (later folded away) was proven on a throwaway database with a real record before relying on it, because it temporarily bypassed the append-only trigger.
+- Integration tests run inside a rolled-back transaction and use ISO's reserved test codes (`XTS`, `XA`), so they never pollute or depend on the dev database.
+- A unit test parses every `app/domain/` module and fails on any database, HTTP or API import, enforcing the "pure functions" rule mechanically.
 
 ---
 
