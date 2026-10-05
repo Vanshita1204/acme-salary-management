@@ -7,6 +7,7 @@ from app.api import (
     compensation_types,
     employees,
     exchange_rates,
+    imports,
     org,
     reference,
 )
@@ -28,6 +29,7 @@ for module in (
     change_reasons,
     employees,
     exchange_rates,
+    imports,
 ):
     app.include_router(module.router)
 for router in (org.departments, org.job_titles, org.job_levels):

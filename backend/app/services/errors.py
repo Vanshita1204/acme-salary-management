@@ -6,6 +6,7 @@ from enum import Enum
 class Problem(Enum):
     NOT_FOUND = 404
     CONFLICT = 409
+    TOO_LARGE = 413
     INVALID = 422
 
 
