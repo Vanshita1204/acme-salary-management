@@ -22,7 +22,8 @@ def upgrade() -> None:
         "exchange_rates",
         sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
         sa.Column("currency", sa.CHAR(3), sa.ForeignKey("currencies.code"), nullable=False),
-        sa.Column("rate_to_usd", sa.Numeric(18, 8), nullable=False),
+        # USD value of one unit; 16 dp keeps ~9 significant digits even for IRR (~1.5M per USD).
+        sa.Column("rate_to_usd", sa.Numeric(24, 16), nullable=False),
         sa.Column("rate_date", sa.Date(), nullable=False),
         sa.Column("source", sa.Text(), nullable=False),
         sa.Column(

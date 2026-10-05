@@ -14,7 +14,7 @@ from sqlalchemy import (
     func,
     text,
 )
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.db.session import Base
 
@@ -33,10 +33,6 @@ class CompensationType(Base):
     name: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
-    )
-
-    change_reasons: Mapped[list["ChangeReason"]] = relationship(  # noqa: F821
-        back_populates="compensation_type"
     )
 
     __table_args__ = (

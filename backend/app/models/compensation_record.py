@@ -8,7 +8,6 @@ from sqlalchemy import (
     Date,
     DateTime,
     ForeignKey,
-    ForeignKeyConstraint,
     Identity,
     Index,
     Numeric,
@@ -42,7 +41,9 @@ class CompensationRecord(Base):
     country: Mapped[str] = mapped_column(CHAR(2), ForeignKey("countries.code"), nullable=False)
     currency: Mapped[str] = mapped_column(CHAR(3), ForeignKey("currencies.code"), nullable=False)
     amount: Mapped[Decimal] = mapped_column(Numeric(14, 2), nullable=False)
-    change_reason_id: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    change_reason_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("change_reasons.id"), nullable=False
+    )
     note: Mapped[str | None] = mapped_column(Text)
     changed_by: Mapped[str] = mapped_column(Text, nullable=False)  # a label, not a verified identity
     created_at: Mapped[datetime] = mapped_column(
@@ -51,20 +52,10 @@ class CompensationRecord(Base):
 
     employee: Mapped["Employee"] = relationship(back_populates="compensation_records")  # noqa: F821
     compensation_type: Mapped[CompensationType] = relationship()
-    change_reason: Mapped[ChangeReason] = relationship(
-        foreign_keys=[change_reason_id],
-        primaryjoin="CompensationRecord.change_reason_id == ChangeReason.id",
-        viewonly=True,
-    )
+    change_reason: Mapped[ChangeReason] = relationship()
 
     __table_args__ = (
         CheckConstraint("amount >= 0", name="chk_comp_record_amount_non_negative"),
-        # A reason must belong to the record's compensation type.
-        ForeignKeyConstraint(
-            ["compensation_type_id", "change_reason_id"],
-            ["change_reasons.compensation_type_id", "change_reasons.id"],
-            name="fk_comp_records_type_reason",
-        ),
         Index(
             "ix_comp_records_employee_type_effdate",
             "employee_id",

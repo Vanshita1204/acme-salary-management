@@ -21,17 +21,9 @@ def upgrade() -> None:
     op.create_table(
         "change_reasons",
         sa.Column("id", sa.BigInteger(), sa.Identity(always=True), primary_key=True),
-        sa.Column(
-            "compensation_type_id",
-            sa.BigInteger(),
-            sa.ForeignKey("compensation_types.id"),
-            nullable=False,
-        ),
-        sa.Column("code", sa.Text(), nullable=False),
+        # One shared list: any record of any compensation type can use any reason.
+        sa.Column("code", sa.Text(), nullable=False, unique=True),
         sa.Column("label", sa.Text(), nullable=False),
-        sa.UniqueConstraint("compensation_type_id", "code", name="uq_change_reasons_type_code"),
-        # Target of compensation_records' composite FK (type, reason).
-        sa.UniqueConstraint("compensation_type_id", "id", name="uq_change_reasons_type_id"),
     )
 
 

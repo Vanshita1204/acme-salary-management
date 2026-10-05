@@ -25,7 +25,7 @@ class ExchangeRate(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, Identity(always=True), primary_key=True)
     currency: Mapped[str] = mapped_column(CHAR(3), ForeignKey("currencies.code"), nullable=False)
-    rate_to_usd: Mapped[Decimal] = mapped_column(Numeric(18, 8), nullable=False)
+    rate_to_usd: Mapped[Decimal] = mapped_column(Numeric(24, 16), nullable=False)
     rate_date: Mapped[date] = mapped_column(Date, nullable=False)
     source: Mapped[str] = mapped_column(Text, nullable=False)
     fetched_at: Mapped[datetime] = mapped_column(

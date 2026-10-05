@@ -2,13 +2,13 @@
 
 Concrete schema for `docs/REQUIREMENTS.md` §3 (Data Model) and §6 (Business Rules), written to be transcribed almost directly into the Phase 1 Alembic migration (`docs/IMPLEMENTATION_PLAN.md`). Target: PostgreSQL 16.
 
-> **Revision note:** this version replaces the original fixed four-column compensation record (`base_salary`/`annual_bonus`/`allowances`/`annual_equity_value`) and the single global `change_reason` enum with a universal catalog of compensation types (`compensation_types`) and per-type change reasons (`change_reasons`). Also adds `companies` and two `employees` columns (`company_id`, `termination_date`). Interpretive calls made while doing this are listed at the bottom of this document.
+> **Revision note:** this version replaces the original fixed four-column compensation record (`base_salary`/`annual_bonus`/`allowances`/`annual_equity_value`) and the single global `change_reason` enum with a universal catalog of compensation types (`compensation_types`) and a shared, extendable list of change reasons (`change_reasons`) that any record can use, regardless of type. Also adds `companies` and two `employees` columns (`company_id`, `termination_date`). Interpretive calls made while doing this are listed at the bottom of this document.
 
 ## Design goals this schema is answering to
 - Append-only compensation history — no code path or DB grant allows updating or deleting a `compensation_records` row.
 - Business rules are constraints, not just application checks (§7).
 - Compensation types (fixed pay, variable pay, equity, allowances, bonus, …) are a **single universal catalog**, shared by every company and not per-employee — one list of types, administered centrally.
-- Each compensation type has its own valid change reasons — a bonus doesn't change for the same reasons a relocation does.
+- Change reasons belong to the record, not the type: one shared list any compensation record picks from, so a reason like "promotion" or "correction" means the same thing everywhere.
 - Directory reads (FR-1) and analytics (§5) never recompute "latest record per employee" over the full history table — `current_compensation` makes that a 1-row-per-(employee, type) lookup.
 - Total compensation is **never stored** (§3) — only ever computed, in SQL, by summing an employee's current rows.
 - Everything that will be filtered, searched, or sorted in FR-1 has a supporting index.
@@ -59,8 +59,7 @@ erDiagram
     }
     CHANGE_REASONS {
         bigint id PK
-        bigint compensation_type_id FK
-        text code
+        text code UK
         text label
     }
     COMPENSATION_RECORDS {
@@ -100,7 +99,6 @@ erDiagram
     COUNTRIES ||--o{ COMPENSATION_RECORDS : "country"
     CURRENCIES ||--o{ EMPLOYEES : "current currency"
     COMPANIES ||--o{ EMPLOYEES : "employs"
-    COMPENSATION_TYPES ||--o{ CHANGE_REASONS : "valid reasons"
     COMPENSATION_TYPES ||--o{ COMPENSATION_RECORDS : "typed as"
     COMPENSATION_TYPES ||--o{ CURRENT_COMPENSATION : "typed as"
     CHANGE_REASONS ||--o{ COMPENSATION_RECORDS : "reason"
@@ -218,17 +216,13 @@ CREATE INDEX ix_comp_types_category ON compensation_types (category);
 
 ```sql
 CREATE TABLE change_reasons (
-    id                      BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    compensation_type_id    BIGINT NOT NULL REFERENCES compensation_types(id),
-    code                    TEXT   NOT NULL,   -- e.g. 'new_hire', 'annual_revision', 'quarterly_payout', 'vesting', 'correction'
-    label                   TEXT   NOT NULL,
-
-    UNIQUE (compensation_type_id, code),
-    UNIQUE (compensation_type_id, id)   -- lets compensation_records FK against (type, reason) together
+    id      BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    code    TEXT   NOT NULL UNIQUE,   -- e.g. 'new_hire', 'promotion', 'bonus_payout', 'correction'
+    label   TEXT   NOT NULL
 );
 ```
-- Each `compensation_types` row gets its own seeded set of reasons — e.g. the `fixed` type keeps the original list (`new_hire`, `annual_revision`, `promotion`, `market_adjustment`, `relocation`, `correction`); a `bonus`/`quarterly` type instead gets something like (`quarterly_payout`, `correction`); an `equity` type might get (`new_hire`, `annual_grant`, `promotion`, `correction`). `correction` is seeded for every type, since mistakes happen regardless of type.
-- The second `UNIQUE (compensation_type_id, id)` is what lets `compensation_records` declare a **composite foreign key** against `(compensation_type_id, change_reason_id)`, so the database — not application code — rejects a record that pairs a type with a reason that doesn't belong to it.
+- **One shared list, independent of compensation type.** A reason describes why a particular *record* was written, so any record — whatever its type — can carry any reason. Seeded: `new_hire`, `annual_revision`, `promotion`, `market_adjustment`, `role_change`, `relocation`, `bonus_payout`, `equity_grant`, `retention_award`, `policy_change`, `correction`. HR can add more.
+- Three codes are looked up by name in business rules and must always exist: `new_hire` (initial base-pay record, FR-2/FR-5), `relocation` (country change, FR-7), `correction` (excluded from average-increase stats, §5). The seed's smoke check enforces this.
 
 ---
 
@@ -243,13 +237,10 @@ CREATE TABLE compensation_records (
     country               CHAR(2)       NOT NULL REFERENCES countries(code),
     currency              CHAR(3)       NOT NULL REFERENCES currencies(code),
     amount                NUMERIC(14,2) NOT NULL CHECK (amount >= 0),
-    change_reason_id      BIGINT        NOT NULL,
+    change_reason_id      BIGINT        NOT NULL REFERENCES change_reasons(id),   -- any reason, any type
     note                  TEXT,
     changed_by            TEXT          NOT NULL,   -- a label, not a verified identity (no auth; §"Deliberately Left Out")
-    created_at            TIMESTAMPTZ   NOT NULL DEFAULT now(),
-
-    FOREIGN KEY (compensation_type_id, change_reason_id)
-        REFERENCES change_reasons (compensation_type_id, id)
+    created_at            TIMESTAMPTZ   NOT NULL DEFAULT now()
 );
 
 CREATE INDEX ix_comp_records_employee_type_effdate
@@ -341,7 +332,7 @@ Unchanged from the prior revision:
 CREATE TABLE exchange_rates (
     id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     currency    CHAR(3)       NOT NULL REFERENCES currencies(code),
-    rate_to_usd NUMERIC(18,8) NOT NULL CHECK (rate_to_usd > 0),
+    rate_to_usd NUMERIC(24,16) NOT NULL CHECK (rate_to_usd > 0),  -- USD value of one unit; 16 dp keeps ~9 significant digits even for IRR (~1.5M per USD)
     rate_date   DATE          NOT NULL,
     source      TEXT          NOT NULL,
     fetched_at  TIMESTAMPTZ   NOT NULL DEFAULT now(),
@@ -361,7 +352,8 @@ CREATE INDEX ix_exchange_rates_latest ON exchange_rates (currency, rate_date DES
 | Other components ≥ 0 | table-level `CHECK (amount >= 0)` on `compensation_records` |
 | Effective date ≥ hire date | same `BEFORE INSERT` trigger (cross-table, can't be a plain `CHECK`) |
 | A new compensation record must use the employee's current currency | same `BEFORE INSERT` trigger |
-| A change reason must be valid for its compensation type | composite `FOREIGN KEY (compensation_type_id, change_reason_id)` → `change_reasons (compensation_type_id, id)` |
+| A change reason must exist (any reason is valid for any type) | `FOREIGN KEY (change_reason_id)` → `change_reasons (id)`; `UNIQUE (code)` on `change_reasons` |
+| Reasons the rules rely on (`new_hire`, `relocation`, `correction`) exist | seed smoke check (`check_change_reasons`) |
 | Exactly one base-pay type exists, globally | `UNIQUE` index on `compensation_types ((true)) WHERE is_base_pay` |
 | `period_months` must be a positive number of months | `CHECK (period_months > 0)` on `compensation_types` |
 | Termination date set iff status = terminated, never before hire date | same-row `CHECK` constraints on `employees` |
@@ -387,7 +379,7 @@ CREATE INDEX ix_exchange_rates_latest ON exchange_rates (currency, rate_date DES
 | Latest rate per currency | `(currency, rate_date DESC)` on `exchange_rates` |
 
 ## Migration note
-Updated dependency order for Phase 1: `currencies` → `countries` → `companies` → `compensation_types` → `change_reasons` → `employees` → `compensation_records` (+ validation trigger + append-only trigger) → `current_compensation` → `exchange_rates`. `compensation_types` no longer depends on `companies` — it's listed in this order for convenience, not because of an FK. Each as its own Alembic revision. Validate as integration tests immediately after: negative/zero amount on the `is_base_pay` type, zero/negative `period_months`, a reason from the wrong type, a record whose `currency` doesn't match `employees.currency`, a second row with `is_base_pay = true` (should fail globally, not just per company), `termination_date` set without `status = 'terminated'`, and direct `UPDATE`/`DELETE` against `compensation_records`. Also add a unit test (pure function, no DB) for `annualize(amount, period_months)` covering monthly/quarterly/semi-annual/annual inputs.
+Updated dependency order for Phase 1: `currencies` → `countries` → `companies` → `compensation_types` → `change_reasons` (no FK to `compensation_types`) → `employees` → `compensation_records` (+ validation trigger + append-only trigger) → `current_compensation` → `exchange_rates`. `compensation_types` no longer depends on `companies` — it's listed in this order for convenience, not because of an FK. Each as its own Alembic revision. Validate as integration tests immediately after: negative/zero amount on the `is_base_pay` type, zero/negative `period_months`, a nonexistent change reason, a duplicate reason code, a record whose `currency` doesn't match `employees.currency`, a second row with `is_base_pay = true` (should fail globally, not just per company), `termination_date` set without `status = 'terminated'`, and direct `UPDATE`/`DELETE` against `compensation_records`. Also add a unit test (pure function, no DB) for `annualize(amount, period_months)` covering monthly/quarterly/semi-annual/annual inputs.
 
 ---
 
@@ -395,12 +387,12 @@ Updated dependency order for Phase 1: `currencies` → `countries` → `companie
 The request had some ambiguity; here's how it was resolved, and what's easy to change if this guessed wrong:
 - **"Variable max" / "variable paid" are two separate catalog entries** (`category='variable', subtype='max'` and `subtype='paid'`), not two fields on one type — matches how they were listed alongside `equity`/`allowances`/`bonus` as peers.
 - **"Company name" became a `companies` table + `employees.company_id` FK**, not a free-text column — consistent with how `country`/`currency` are already modeled. (It no longer doubles as the scope for `compensation_types`, which is now universal — see below.)
-- **"Each should have their own change reason" became a `change_reasons` table keyed by `compensation_type_id`**, enforced via a composite FK from `compensation_records` — rather than, say, a free-text reason field per record with no validation. If a reason should actually be shared across several types (e.g. `correction` meaning the same thing everywhere), that's handled by seeding the same `code`/`label` into every type's row, not by a shared global enum, so each type can still gain or drop reasons independently later.
+- **Change reasons are record-level, from one shared list** (revised). An earlier revision read "each should have their own change reason" as reasons scoped per compensation type, enforced with a composite FK. That was reversed: a reason explains why a record was written, so it belongs to the record, and every type draws from the same list. It stays a lookup table rather than free text, because business rules key off specific codes (`new_hire`, `relocation`, `correction`) and reports group by reason; the free-form detail goes in `note`.
 - **`category`/`subtype` reverted from DB-enforced choice fields back to free text.** An earlier revision added `CHECK` constraints restricting both to fixed value lists; that's now superseded — compensation types are added manually, so a company can type whatever label it wants. The one place this mattered for correctness — telling base salary apart from everything else for the "> 0" rule — was moved to a dedicated `is_base_pay` boolean instead of pattern-matching on `category`'s text.
 - **`period_months` (integer), not a time-period string.** Replaces any notion of `'monthly'`/`'quarterly'` as a string with a plain number of months, so annualizing any type — regardless of what it's named — is one arithmetic expression (`amount * 12 / period_months`) instead of a lookup or `CASE` statement. This also quietly revises §2's "amounts are annual" assumption: a `compensation_records.amount` is now per-`period_months`, and "annual" is always a derived view, computed the same way everywhere.
 - **§5's "base vs. variable (bonus, allowances, equity)" composition breakdown** now groups by whatever free-text `category` values actually exist, rather than a fixed `fixed`/`variable`/`equity`/`allowance`/`bonus` set — a more open-ended breakdown than the original two-bucket "base vs. variable" framing, since `category` can no longer be assumed to be one of five known values. Not a schema change, just a forward note for Phase 12.
 - **`compensation_types` has no `company_id`.** Earlier revisions scoped it per company (per an earlier instruction that it "can be unique for a company, not employee"); this one makes it universal instead — one catalog, shared by every company. The validation trigger's "type must belong to the employee's own company" check is gone along with it, since there's no company relationship left to check. `employees.company_id` is untouched — that's still just which ACME entity an employee belongs to, unrelated to which compensation types exist.
 - **`employees.currency` kept independent of `current_country`**, rather than always derived from `countries.default_currency`. The seed script will still default it from the employee's country at hire time (so most employees' currency matches their country, as the original spec assumed), but nothing in the schema forces that going forward.
 - **`compensation_records.currency` was kept, not dropped**, even though `employees.currency` is now authoritative — removing it would mean a past record's currency becomes ambiguous (silently reinterpreted) if the employee's currency changes later. Instead, a trigger enforces that every *new* record's currency matches the employee's *current* currency at insert time, so the two can never silently drift, but history stays exactly as recorded.
-- **`current_compensation.country`/`.currency` were dropped** (both are redundant with `employees.*`), but only after closing a real correctness gap: the obvious implementation — auto-converting old amounts to the new currency using the latest exchange rate — was rejected. There's no principled choice of *which* rate (today's? the rate on each record's original `effective_date`?), and more importantly, baking a live external rate into a permanently-recorded compensation figure contradicts §7's resilience stance of never letting the exchange-rate provider affect what gets written, not just what gets read. Instead, a currency change is its own guided operation: a screen listing every one of the employee's current compensation types with an editable amount field (the current, pre-conversion amount shown only as a non-binding starting point), submitted as one transaction that updates `employees.currency` and writes a new `compensation_records` row per type, all in the new currency, all HR-authored figures. This reuses the existing per-type change reasons (e.g. "market adjustment," "correction") — no new "currency_conversion" reason was added, since the amounts aren't system-computed.
+- **`current_compensation.country`/`.currency` were dropped** (both are redundant with `employees.*`), but only after closing a real correctness gap: the obvious implementation — auto-converting old amounts to the new currency using the latest exchange rate — was rejected. There's no principled choice of *which* rate (today's? the rate on each record's original `effective_date`?), and more importantly, baking a live external rate into a permanently-recorded compensation figure contradicts §7's resilience stance of never letting the exchange-rate provider affect what gets written, not just what gets read. Instead, a currency change is its own guided operation: a screen listing every one of the employee's current compensation types with an editable amount field (the current, pre-conversion amount shown only as a non-binding starting point), submitted as one transaction that updates `employees.currency` and writes a new `compensation_records` row per type, all in the new currency, all HR-authored figures. This reuses the existing shared change reasons (e.g. "market adjustment," "correction") — no new "currency_conversion" reason was added, since the amounts aren't system-computed.
 - **§7's "never depends on the exchange-rate provider" principle extends beyond reads**: the currency-change design above is the concrete reason that principle also rules out auto-conversion on write, not just serving stale rates on read.

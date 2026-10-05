@@ -32,19 +32,18 @@ def upgrade() -> None:
         sa.Column("country", sa.CHAR(2), sa.ForeignKey("countries.code"), nullable=False),
         sa.Column("currency", sa.CHAR(3), sa.ForeignKey("currencies.code"), nullable=False),
         sa.Column("amount", sa.Numeric(14, 2), nullable=False),
-        sa.Column("change_reason_id", sa.BigInteger(), nullable=False),
+        sa.Column(
+            "change_reason_id",
+            sa.BigInteger(),
+            sa.ForeignKey("change_reasons.id"),
+            nullable=False,
+        ),
         sa.Column("note", sa.Text()),
         sa.Column("changed_by", sa.Text(), nullable=False),
         sa.Column(
             "created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
         ),
         sa.CheckConstraint("amount >= 0", name="chk_comp_record_amount_non_negative"),
-        # A reason must belong to the record's compensation type.
-        sa.ForeignKeyConstraint(
-            ["compensation_type_id", "change_reason_id"],
-            ["change_reasons.compensation_type_id", "change_reasons.id"],
-            name="fk_comp_records_type_reason",
-        ),
     )
     op.create_index(
         "ix_comp_records_employee_type_effdate",

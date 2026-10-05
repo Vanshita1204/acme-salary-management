@@ -62,20 +62,15 @@ def ref(db: Session) -> dict:
     db.add(bonus)
     db.flush()
 
-    base_reason = ChangeReason(
-        compensation_type_id=base_pay.id, code=f"pytest-{uuid.uuid4()}", label="t"
-    )
-    bonus_reason = ChangeReason(
-        compensation_type_id=bonus.id, code="correction", label="Correction"
-    )
-    db.add_all([base_reason, bonus_reason])
+    # Reasons are shared across types, so one reason serves every record below.
+    reason = ChangeReason(code=f"pytest-{uuid.uuid4()}", label="t")
+    db.add(reason)
     db.flush()
     return {
         "company": company,
         "base_pay": base_pay,
         "bonus": bonus,
-        "base_reason": base_reason,
-        "bonus_reason": bonus_reason,
+        "reason": reason,
     }
 
 
@@ -106,7 +101,7 @@ def make_record(
     fields = {
         "employee_id": employee.id,
         "compensation_type_id": ref["base_pay"].id,
-        "change_reason_id": ref["base_reason"].id,
+        "change_reason_id": ref["reason"].id,
         "effective_date": HIRE_DATE,
         "country": "XA",
         "currency": "XTS",
@@ -131,7 +126,7 @@ def test_valid_employee_and_records_are_accepted(db, ref):
         ref,
         employee,
         compensation_type_id=ref["bonus"].id,
-        change_reason_id=ref["bonus_reason"].id,
+        change_reason_id=ref["reason"].id,
         amount=Decimal(0),  # zero is fine for non-base-pay types
     )
 
@@ -162,7 +157,7 @@ def test_other_components_cannot_be_negative(db, ref):
             ref,
             employee,
             compensation_type_id=ref["bonus"].id,
-            change_reason_id=ref["bonus_reason"].id,
+            change_reason_id=ref["reason"].id,
             amount=Decimal("-0.01"),
         )
 
@@ -179,10 +174,18 @@ def test_new_record_must_use_employees_current_currency(db, ref):
         make_record(db, ref, employee, currency="XXX")
 
 
-def test_change_reason_must_belong_to_the_records_type(db, ref):
+def test_change_reason_must_exist(db, ref):
     employee = make_employee(db, ref)
-    with pytest.raises(IntegrityError, match="fk_comp_records_type_reason"):
-        make_record(db, ref, employee, change_reason_id=ref["bonus_reason"].id)
+    with pytest.raises(
+        IntegrityError, match="compensation_records_change_reason_id_fkey"
+    ):
+        make_record(db, ref, employee, change_reason_id=-1)
+
+
+def test_change_reason_codes_are_unique(db, ref):
+    db.add(ChangeReason(code=ref["reason"].code, label="duplicate"))
+    with pytest.raises(IntegrityError, match="change_reasons_code_key"):
+        db.flush()
 
 
 # --- compensation types ---

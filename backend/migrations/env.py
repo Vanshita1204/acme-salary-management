@@ -1,13 +1,11 @@
 from logging.config import fileConfig
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
-
 from alembic import context
+from sqlalchemy import engine_from_config, pool
 
+import app.models  # noqa: F401  registers every model on Base.metadata (Phase 1+)
 from app.core.config import get_settings
 from app.db.session import Base
-import app.models  # noqa: F401  registers every model on Base.metadata (Phase 1+)
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -16,7 +14,8 @@ config = context.config
 # Interpret the config file for Python logging.
 # This line sets up loggers basically.
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # Keep app loggers alive when migrations run in-process (e.g. the test fixture).
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # Single source of truth for the DB URL: app.core.config.Settings (reads .env).
 config.set_main_option("sqlalchemy.url", get_settings().database_url)
