@@ -227,6 +227,49 @@ Instructions given to the coding agent are committed in _[e.g. `CLAUDE.md`]_.
 - **AI caught:** an early version stopped reading after 10,001 rows to save work, which would have made the "file has N rows" error report the wrong N. Reading is bounded by the 10 MB upload limit instead.
 - **Verification:** the plan's acceptance case (a file with one bad row saves nothing and reports the row, column and reason) is a test, along with a rollback test that fails after employee rows were already inserted.
 
+**37. Phase 10: the export has to be the same view, not a lookalike**
+- **AI output:** The export takes exactly the directory's parameters through one shared dependency and runs the directory's own filter and sort statement without the page limit, instead of a second query that happens to resemble it.
+- **Verification:** 13 tests page through the directory two rows at a time and compare the result with the export for six views (every sort in both directions, filters, search, three reporting currencies): same people, same order, same totals. Reversing the export's sort order fails all six.
+- **AI added unasked:** text cells starting with `=`, `+`, `-`, `@` are prefixed so a spreadsheet doesn't run them as formulas, and the file carries a byte-order mark so accented names display correctly in Excel.
+- **Limit recorded:** the file is built in memory (1.35 MB at 10,000 employees). Past the deployed size it should stream.
+
+**38. Phase 11: "no type stranded in the old currency" needed more rules than the plan listed**
+- **Prompt:** the plan's done-when: a currency change leaves no compensation type in the old currency.
+- **AI output:** Meeting that required rules the plan didn't state. The amounts must name exactly the employee's current types. The effective date can't be in the future or before a current record, because the new record would otherwise never become current while the employee row had already moved. A currency change is refused while future-dated records exist. A last-line check rolls the whole transaction back if any rewritten type didn't become current.
+- **Verification:** a SQL check that no current row is in a currency other than the employee's runs after every successful and every rejected attempt, and a failure on the second of three records rolls back the currency change.
+- **Decision:** no automatic conversion. The live rate is only a suggestion that pre-fills editable fields.
+
+**39. Phase 12: checking the analytics against a second definition**
+- **AI output:** Every view is computed in SQL (`percentile_cont`, window functions). The tests build a 12-person population with known pay in three currencies and compare each view with pure Python definitions worked out separately.
+- **Verification:** removing the active-only rule fails 11 tests and removing the 5-person minimum fails the outlier test, so the tests do check those rules.
+- **Design call:** employees whose currency has no stored rate are counted in `excluded_no_rate` instead of silently dropped. Phase 14 later found a case this missed (item 41).
+
+**40. Phase 13: what the browser found that the tests didn't**
+- **Verification:** besides 59 component tests, a real Chromium drove the built app against the real API on the 10,000-employee seed (19 flows, light and dark), and axe-core audited all seven screens.
+- **Bugs found:** the loading flag flipped one render late, so stale rows briefly looked current; filter checkboxes flickered because the router defers URL updates; the dark-mode primary button was 4.41:1 contrast; content sat outside landmarks; scrollable tables weren't keyboard-reachable. All fixed.
+- **Limit recorded:** the browser runs were a throwaway script, not a checked-in end-to-end suite.
+
+**41. Phase 14: the hardening pass found a real hole and weak tests of my own**
+- **AI caught:** a statement-level `TRUNCATE compensation_records CASCADE` (via another table) wiped history, because row triggers don't fire on `TRUNCATE`. Migration `0012` adds a trigger for it. A least-privilege database role and static code checks cover the other paths.
+- **Tests that proved nothing:** my owner `UPDATE`/`DELETE` tests passed on an empty table because there was nothing to modify ("DID NOT RAISE" once rows existed), and my first mutation check was meaningless because the test session re-ran the migration that I was removing. Both were redone so the mutation actually fails the test.
+- **Test isolation:** tests moved to their own database with a network guard. The guard first missed outbound HTTP through a local proxy; an HTTP transport patch closed it.
+- **Real product bugs found:** a failed refresh left stale numbers on screen with no warning; analytics excluded everyone when no exchange rates were stored (same-currency pay needs no rate); dead pooled connections after a database restart; raw field names in server messages.
+- **Honest result:** the full unfiltered CSV export took 639 ms (p95), over 500 ms. The requirement covers list, search and filter, not file download, so I recorded it with its profile instead of quietly changing the target. Directory p95 was 80 ms and analytics 391 ms.
+
+**42. Phase 15: deployment I could not do, and did not pretend to**
+- **Limit:** the agent environment has no Docker daemon and no hosting account, so the image was not built and nothing is deployed. The README's live URL and demo video are marked as placeholders to fill in after the first deploy.
+- **What was verified:** the container's own entrypoint script took an empty database to 10,000 employees in 9 s with the rate provider unreachable, served the app, and a real browser loaded the list, a deep link after reload, and Pay insights. A second start changed nothing.
+- **AI caught:** hosts hand out `postgres://` URLs, which the psycopg 3 driver doesn't accept without the driver name; the setting now normalises them.
+- **Design call:** the API is mounted under `/api` (the prefix the dev proxy already used) so the frontend needed no change and no CORS.
+
+**43. Phase 16: three results that went against my hypotheses, and one that looked like a failure**
+- **Prompt:** run the plan's remaining Scale Lab experiments (search, analytics, import, index cost, partitioning).
+- **Hypotheses disproven:** zero indexes was not faster to load, it was 4.4× slower, because the seed reads back what it wrote; the staging import was 1.8–2.5× faster, not "several times"; extra indexes cost 3.7% load time.
+- **Looked like a failure:** the trigram index showed no speedup at 1M. The AI didn't accept that. The plan captured by `EXPLAIN` used the index; the timed runs didn't. Cause: the driver prepares a statement after five runs and Postgres then uses one generic plan that can't know a term is rare. The same search went from 2 ms to 4 s. That is a real hazard for the app, recorded with its fix instead of the index being declared useless.
+- **Also found:** an unanalysed staging table made validation 5–8× slower (fixed); `work_mem = 256MB` made 1M-row validation 8× slower and the cause is unexplained, so it is recorded as such.
+- **Deviation recorded:** the plan's 10-million-employee dataset was not run (disk and hours); partitioning was measured at 1 million instead.
+- **Caught before it landed:** rebuilding the lab databases overwrote the earlier Apple-Silicon build results that the docs cite. They were restored and the new ones saved under a different name.
+
 ---
 
 ## Entry Template
