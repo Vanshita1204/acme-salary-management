@@ -1,0 +1,115 @@
+{
+  "environment": {
+    "machine": "Linux-6.18.44-fc-v70-x86_64-with-glibc2.39",
+    "cpu_count": 4,
+    "memory_gb": 16,
+    "postgres": "16.14 (Ubuntu 16.14-0ubuntu0.24.04.1)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "163848kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-05T17:59:26+00:00"
+  },
+  "database": "acme_lab_m",
+  "employees_before": 1000000,
+  "employees_after": 1000000,
+  "results": {
+    "10000": {
+      "file_mb": 1.1,
+      "staging": {
+        "outcome": "imported (rolled back for the lab)",
+        "employees_inserted": 10000,
+        "seconds": 2.56,
+        "stage_seconds": 0.1,
+        "validate_seconds": 0.35,
+        "employees_seconds": 0.87,
+        "records_seconds": 0.73,
+        "current_seconds": 0.19,
+        "peak_rss_mb": 57
+      },
+      "application": {
+        "outcome": "imported (rolled back for the lab)",
+        "employees_inserted": 10000,
+        "seconds": 4.51,
+        "peak_rss_mb": 120
+      }
+    },
+    "100000": {
+      "file_mb": 11.5,
+      "staging": {
+        "outcome": "imported (rolled back for the lab)",
+        "employees_inserted": 100000,
+        "seconds": 16.13,
+        "stage_seconds": 0.38,
+        "validate_seconds": 1.79,
+        "employees_seconds": 7.35,
+        "records_seconds": 4.59,
+        "current_seconds": 1.71,
+        "peak_rss_mb": 64
+      },
+      "staging_work_mem_256mb": {
+        "outcome": "imported (rolled back for the lab)",
+        "employees_inserted": 100000,
+        "seconds": 15.63,
+        "stage_seconds": 0.38,
+        "validate_seconds": 1.53,
+        "employees_seconds": 7.3,
+        "records_seconds": 4.38,
+        "current_seconds": 1.77,
+        "peak_rss_mb": 64
+      }
+    },
+    "1000000": {
+      "file_mb": 118.3,
+      "staging": {
+        "outcome": "imported (rolled back for the lab)",
+        "employees_inserted": 1000000,
+        "seconds": 154.97,
+        "stage_seconds": 1.69,
+        "validate_seconds": 11.84,
+        "employees_seconds": 72.26,
+        "records_seconds": 51.13,
+        "current_seconds": 17.49,
+        "peak_rss_mb": 118
+      },
+      "staging_work_mem_256mb": {
+        "outcome": "imported (rolled back for the lab)",
+        "employees_inserted": 1000000,
+        "seconds": 230.65,
+        "stage_seconds": 1.89,
+        "validate_seconds": 95.73,
+        "employees_seconds": 72.35,
+        "records_seconds": 43.05,
+        "current_seconds": 16.19,
+        "peak_rss_mb": 106
+      }
+    },
+    "rejected_file": {
+      "outcome": "rejected",
+      "problems_reported": 3,
+      "sample": [
+        [
+          1000002,
+          "email",
+          "invalid email address"
+        ],
+        [
+          1000003,
+          "email",
+          "invalid email address"
+        ],
+        [
+          1000001,
+          "email",
+          "invalid email address"
+        ]
+      ],
+      "seconds": 14.82,
+      "stage_seconds": 1.69,
+      "validate_seconds": 13.11,
+      "peak_rss_mb": 104
+    }
+  }
+}

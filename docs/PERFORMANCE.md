@@ -1,6 +1,6 @@
 # Performance — Scale Lab Results
 
-Results of the Phase 1 Scale Lab experiments (`docs/SCALE_LAB.md`, E1–E3), run at **S = 10,000** and **M = 1,000,000** employees. Raw numbers, timings and full `EXPLAIN (ANALYZE, BUFFERS)` plans are in `backend/scale_lab/results/*.json`; `python -m scale_lab.report` regenerates the tables below from them.
+Results of the Scale Lab experiments (`docs/SCALE_LAB.md`): E1–E3 in Phase 1, E4–E8 in Phase 16 (further down, with their own machine note). Run at **S = 10,000** and **M = 1,000,000** employees. Raw numbers, timings and full `EXPLAIN (ANALYZE, BUFFERS)` plans are in `backend/scale_lab/results/*.json`; `python -m scale_lab.report` regenerates the tables below from them.
 
 All results are synthetic data on one local machine. They show how queries and the data model behave at volume, not production traffic or concurrency.
 
@@ -157,6 +157,121 @@ The export is over 500 ms, but the requirement covers listing, searching and fil
 
 ---
 
+## Phase 2 experiments (E4–E8)
+
+**Machine for this section:** a different one from the table above — Linux x86-64, 4 vCPU, 16 GB RAM, PostgreSQL 16.14 (distribution package, same settings: `shared_buffers` 160 MB, `work_mem` 4 MB). So absolute times here are not comparable with E1–E3; compare columns within a table. The datasets are the same (S, M; M took 1,141 s to seed here vs 1,001 s on the Mac). **The plan's L dataset (10 M employees, ~180 M records at this seed's ~18 records per employee) was not run**: it needs well over 100 GB of disk and many hours to load. E8, the only experiment defined on L, was run on M instead. Raw results: `backend/scale_lab/results/e4_…` to `e8_…`; `python -m scale_lab.report` regenerates the tables.
+
+### E4 — Search
+
+**Hypothesis:** a B-tree can only serve a prefix, so it can't replace the directory's substring search over four expressions (full name, last name, email, code); one `pg_trgm` GIN index per expression can, for terms of 3+ characters. Short terms have no trigram and should stay a scan.
+
+Median ms, the directory's real page query (search, name order, 51 rows):
+
+| Term | Matches | No index | Trigram GIN |
+|---|---|---|---|
+| 2 characters | 310,974 | 1.41 | 1.45 |
+| 3 characters, common | 58,637 | 1.92 | 2.49 |
+| surname | 218 | 1.74 | 1.74 |
+| part of a full name | 3 | 1,983 | 6.08 |
+| part of a code | 100 | 2,033 | 12.0 |
+| part of an email | 1 | 2,079 | 1.41 |
+| no match | 0 | 3,857 | 0.44 |
+
+At S (10,000) the same rare terms take 15–26 ms unindexed and ~1 ms with the index.
+
+| Last-name prefix only (a different, narrower question) | No index | B-tree prefix |
+|---|---|---|
+| `ab…` | 150 | 2.45 |
+| `abbott…` | 132 | 1.33 |
+
+- **Cost:** four trigram indexes 161 MB (the employees table is 406 MB) and 17 s to build; the B-tree prefix index 7 MB and 1.6 s. Results were identical with and without the index for every term.
+- **Plan:** unindexed, Postgres walks the name-order index and filters until it has 51 rows. That is instant when many people match (the first three rows) and a full pass when few do. With the trigram indexes it does a `BitmapOr` over the four, then a small sort.
+- **Hypothesis confirmed, with two corrections.** (1) Short or common terms never needed the index, because the ordered scan stops early; the case that stays slow is a *short term few people match*, which was not measured. (2) **The index alone is not enough.** The driver (psycopg 3, which the app uses through SQLAlchemy) prepares a statement after 5 executions, and Postgres can then switch to one generic plan that cannot know the term is rare. On one connection the same search went from ~2 ms to ~4,000 ms after about ten executions; measured at steady state with the default driver, "part of a full name" took 3,781 ms even with the indexes in place, while the same query with a per-term plan took 6 ms. Searching at 1M therefore needs the indexes **and** per-term plans (`prepare_threshold=None` on the connection, or `plan_cache_mode = force_custom_plan`). At 10,000 neither matters, so the application was not changed.
+- A trigram index also adds write cost (E7 measured the existing indexes only; the four trigram indexes were not part of it).
+
+### E5 — Analytics aggregation
+
+**Hypothesis:** the live views cost a pass over every active employee's current compensation, so they grow linearly (fine at 10k, seconds at 1M); a materialized view with one row per active employee (annual total in USD plus the filter dimensions) turns each into a scan of one narrow table, several times faster, at the price of staleness and a refresh that rewrites everything.
+
+Median ms, M (S in the last column):
+
+| View | Live | Materialized | Faster | Live at S |
+|---|---|---|---|---|
+| Summary (count, spend, average, median) | 6,178 | 563 | 11× | 52 |
+| Stats by department | 6,949 | 910 | 7.6× | 42 |
+| Stats by department, one country | 1,234 | 273 | 4.5× | 28 |
+| One title across countries | 592 | 101 | 5.8× | 10 |
+
+- The view has 862,450 rows (active employees with a stored rate), 87 MB, and builds in 4 s. Live and materialized answers were identical.
+- **Refresh costs 5.3–5.5 s whatever changed** (100, 1,000 or 10,000 employees), and 8.4–8.9 s with `CONCURRENTLY` (which keeps the view readable and needs the unique index). At S it is 0.05–0.3 s.
+- **Confirmed**, with limits. 4.5–11× faster, but at 1M the two whole-population views still take 0.56–0.91 s because the median over 862k rows is itself the cost, so a view alone does not reach 500 ms; per-dimension summary tables would. The view stores USD, so a daily rate refresh also makes it stale. At the deployed 10k the live views take 10–52 ms and the Phase 14 check (p95 391 ms for the whole mix) stands, so this is not needed there.
+
+### E6 — Large CSV import
+
+**Hypothesis:** the application parses, validates and builds every row in Python, so time and memory grow linearly (the 10,000-row cap exists for that reason). Streaming the file with `COPY` into a staging table, validating with set-based SQL and inserting with three `INSERT … SELECT` statements keeps the process flat and should be several times faster, with the database's per-row triggers as the floor.
+
+Both paths run the full job (stage/parse, validate, insert employees, base-pay records and current compensation) in one transaction, then roll back so the dataset is unchanged. Each ran in its own process. Employees already present: 1,000,000.
+
+| Rows | File | Path | Seconds | Peak process memory |
+|---|---|---|---|---|
+| 10,000 | 1.1 MB | application | 4.5 | 120 MB |
+| 10,000 | 1.1 MB | staging | 2.6 | 57 MB |
+| 100,000 | 11.5 MB | staging | 16.1 | 64 MB |
+| 1,000,000 | 118 MB | staging | 155 | 118 MB |
+
+- At S (10,000 employees present) the application takes 3.8 s and staging 1.5 s for 10,000 rows. The application was not run above its cap; its memory grows ~3.8 KB per row (86 MB at 1,000 rows, 120 MB at 10,000), which would be several GB at 1M (extrapolated, not measured).
+- At 1M rows: validation 11.8 s, employees 72 s, records 51 s, current compensation 17.5 s. **The inserts dominate**: that is the employee table's indexes and the per-row record trigger, not Python.
+- A file with 3 bad rows among 1,000,000 was rejected after 14.8 s with the three problems reported and nothing written.
+- **Partly confirmed.** Memory is flat (57 → 118 MB across 100× more rows) and time is linear (~1.6 ms per row). But the speed-up is **1.8× at M and 2.5× at S**, not "several times": at 10,000 rows the database work is what the application path also waits for.
+- **Two things that mattered more than the design.** (1) A temporary table is never analyzed: without `ANALYZE import_staging` the planner picked nested loops and validation took 10.4 s at 100k rows and 95 s at 1M (1.8 s and 11.8 s with it). (2) `work_mem = 256MB` made no difference at 100k and made 1M validation **8× slower** (95.7 s); the plan changed and the cause was not investigated.
+- **Difference to weigh before adopting it:** the SQL email check is a pattern, not the full `email-validator` rules the application applies, and server-side memory was not measured.
+
+### E7 — Index write cost
+
+**Hypothesis:** each secondary index adds work to every insert, so a load with only constraint-backing indexes is clearly faster than one with all of them; reads are the reverse, and an "essential" subset should capture most of the read benefit at a fraction of the write cost.
+
+Three fresh databases, identical seed, 100,000 employees (~1.8 M records). *Essential* = the history lookup, the partial future-dated index and the name-sort index; *all* = the 11 secondary indexes the migrations create.
+
+| | none | essential | all |
+|---|---|---|---|
+| Secondary indexes | 0 | 3 | 11 |
+| Index size | 72 MB | 145 MB | 156 MB |
+| Bulk load | **432.7 s** | 98.1 s | 101.8 s |
+| Single record insert (ms) | 0.86 | 0.94 | 0.85 |
+| Single employee insert (ms) | 0.87 | 1.13 | 0.79 |
+| Department + country page (ms) | 16.2 | 0.90 | 1.33 |
+| Name page, deep (ms) | 32.6 | 0.45 | 0.51 |
+| Hire-date page (ms) | 13.2 | 14.4 | 0.25 |
+| One employee's history (ms) | 55.9 | 0.26 | 0.35 |
+| Future-dated records (ms) | 275 | 0.18 | 0.21 |
+| Active employees at one level (count, ms) | 14.8 | 13.3 | 10.5 |
+
+- **Disproven in part.** Zero indexes was not faster to load: it was 4.4× *slower*, because the seed reads back the records it just wrote to fill current compensation, and without the history index every batch scans the growing table. Going from essential to all added 8 indexes for **+3.7% load time** and +11 MB; single-row insert latency differences (0.79–1.13 ms) were inside the noise and did not follow the index count.
+- The read side is as predicted: the essential set gives most of the gain; only the hire-date page needs one of the remaining indexes (14 ms → 0.25 ms). The level count is 10–15 ms in all three, so those indexes did little for it.
+- **Conclusion:** keep all 11 indexes. At this size their write cost is small next to the reads they make instant. Single-row inserts here are dominated by the commit (~0.8 ms) on a local disk, which can hide per-index cost; the bulk-load difference is the cleaner measure.
+
+### E8 — Partitioning (run on M, not L)
+
+**Hypothesis:** a date-range report scans every record without partitioning and only the matching partition with it, so it is several times faster and no worse than a date index; the cost is on lookups that don't filter by date and on the schema (`id` can no longer be unique on its own).
+
+M, 17.76 M records, yearly partitions (16 + default). Three copies with the same columns, no triggers or foreign keys, so only the layout differs. Median ms:
+
+| Query | Plain | Plain + date index | Partitioned |
+|---|---|---|---|
+| Records in one quarter (count, sum) | 486 | 966 | **130** |
+| One year grouped by reason | 682 | 637 | **285** |
+| One employee's history | 0.33 | 0.18 | 1.14 |
+| One record by id | 0.70 | 0.48 | 0.56 |
+| Current per type, 50 employees | 1.45 | 0.90 | 2.29 |
+| Single-row insert | 0.61 | | 0.82 |
+
+- Size: 3.06 GB plain, 3.22 GB partitioned (+5%). Pruning worked: the quarter query scanned one partition.
+- A date index did not help the quarter query (it got slower: a quarter is a large part of the table, so the index scan does random heap reads).
+- **Structural limit, shown by trying it:** `PRIMARY KEY (id)` or `UNIQUE (id)` on the partitioned table fails ("unique constraint on partitioned table must include all partitioning columns"). The key becomes `(id, effective_date)`, and `current_compensation.compensation_record_id`, which is unique and references a record's `id`, could not point at it without also storing the date.
+- **Confirmed for date-range reports (2.2–3.7×), at a real cost:** per-employee lookups 1.6–3.5× slower (they probe every partition) and the schema change above. **Not worth doing** while the reports in the requirements (change report, one year) run in under a second at M; revisit only if date-range scans over a much larger table become the bottleneck. The absolute numbers are M's; L was not measured.
+
+---
+
 ## Summary — what the lab confirmed or changed
 
 | Decision | Status | Evidence |
@@ -169,3 +284,8 @@ The export is over 500 ms, but the requirement covers listing, searching and fil
 | Directory sort by compensation / live analytics at 1M | Limit recorded | E3 and directory latency: 2.7–4.2 s at 1M even with the table → `employee_totals` / E5 before scaling past 10k |
 | Directory free-text search at 1M | Limit recorded | Directory latency: 0.8–1.3 s for selective terms (full scan) → `pg_trgm` index (E4) before scaling past 10k |
 | `id` tie-breaker in the name index | Optional | E2: steadier keyset at 1M (0.96 → 0.51 ms); not needed at 10k |
+| Directory free-text search at 1M | Fix measured | E4: trigram GIN takes rare terms from 2–4 s to 0.4–12 ms; needs per-term plans (driver prepared statements flip it back to 4 s) |
+| Live analytics at 1M | Fix measured | E5: materialized view 4.5–11× faster, refresh 5.4 s regardless of changes; still 0.6–0.9 s for global views |
+| In-memory CSV import with a 10,000-row cap | Confirmed as a cap; alternative measured | E6: staging + SQL scales linearly with flat memory (1M rows in 155 s, 118 MB), only 1.8–2.5× faster; inserts dominate |
+| The 11 secondary indexes | Confirmed | E7: all vs essential +3.7% load time; hire-date index turns 14 ms into 0.25 ms; none at all = 4.4× slower load |
+| Partition compensation records by date | Rejected for now | E8: date reports 2.2–3.7× faster, employee lookups 1.6–3.5× slower, `id` can't stay unique |

@@ -98,11 +98,159 @@ def e3(database: str) -> None:
     print()
 
 
+def e4(database: str) -> None:
+    data = load(f"e4_search_{database}")
+    if not data:
+        return
+    print(f"### E4 — search, {data['employees']:,} employees, median ms\n")
+    print("| Term | Matches | No index | Trigram GIN | Trigram GIN, driver default |")
+    print("|---|---|---|---|---|")
+    for term, plain in data["results"]["no_index"].items():
+        gin = data["results"]["trigram_gin"][term]
+        default = (
+            data["results"]
+            .get("trigram_gin_driver_default", {})
+            .get(term, {})
+            .get("median_ms", "n/a")
+        )
+        print(
+            f"| {term} | {plain['matches']:,} | {plain['median_ms']} | {gin['median_ms']} | {default} |"
+        )
+    print()
+    print("| Last-name prefix | No index | B-tree prefix |")
+    print("|---|---|---|")
+    for term, plain in data["results"]["no_index_prefix_query"].items():
+        print(
+            f"| {term} | {plain['median_ms']} | {data['results']['btree_prefix'][term]['median_ms']} |"
+        )
+    tri, bt = data["trigram_indexes"], data["btree_prefix_index"]
+    mb = lambda b: f"{b / 2**20:.1f} MB"
+    print(
+        f"\nIndexes: B-tree prefix {mb(bt['bytes'])}, {bt['build_seconds']} s; "
+        f"four trigram GIN {mb(tri['total_bytes'])}, {tri['total_build_seconds']} s. "
+        f"Result mismatches between plain and trigram: {data['result_mismatches'] or 'none'}.\n"
+    )
+
+
+def e5(database: str) -> None:
+    data = load(f"e5_analytics_{database}")
+    if not data:
+        return
+    print(f"### E5 — analytics, {database}, median ms\n")
+    print("| View | Live | Materialized view | Same answer |")
+    print("|---|---|---|---|")
+    for name, r in data["results"].items():
+        print(
+            f"| {name} | {r['live']['median_ms']} | {r['materialized']['median_ms']} | {r['same_answer']} |"
+        )
+    print(
+        f"\nView: {data['view_rows']:,} rows, {float(data['view_bytes']) / 2**20:.1f} MB, "
+        f"built in {data['build_seconds']} s.\n"
+    )
+    print("| Changed employees | Plain refresh (s) | Concurrent refresh (s) |")
+    print("|---|---|---|")
+    for batch, r in data["refresh_after_changes"].items():
+        print(f"| {int(batch):,} | {r['plain_seconds']} | {r['concurrent_seconds']} |")
+    print()
+
+
+def e6(database: str) -> None:
+    data = load(f"e6_import_{database}")
+    if not data:
+        return
+    print(
+        f"### E6 — CSV import, {database} ({data['employees_before']:,} employees already present)\n"
+    )
+    print("| Rows | File | Path | Seconds | Peak memory |")
+    print("|---|---|---|---|---|")
+    for rows, entry in data["results"].items():
+        if rows == "rejected_file":
+            continue
+        for path in ("application", "staging", "staging_work_mem_256mb"):
+            if path in entry:
+                r = entry[path]
+                print(
+                    f"| {int(rows):,} | {entry['file_mb']} MB | {path} | {r['seconds']} | {r['peak_rss_mb']} MB |"
+                )
+    rej = data["results"]["rejected_file"]
+    print(
+        f"\nFile with 3 bad rows: {rej['outcome']} after {rej['seconds']} s, "
+        f"{rej['problems_reported']} problems reported; employees before/after: "
+        f"{data['employees_before']:,} / {data['employees_after']:,}.\n"
+    )
+
+
+def e7(employees: int) -> None:
+    data = load(f"e7_index_cost_{employees}")
+    if not data:
+        return
+    configs = data["results"]
+    print(f"### E7 — index write cost, {employees:,} employees\n")
+    print("| | " + " | ".join(configs) + " |")
+    print("|---|" + "---|" * len(configs))
+    print(
+        "| Secondary indexes | "
+        + " | ".join(str(c["secondary_indexes"]) for c in configs.values())
+        + " |"
+    )
+    print(
+        "| Index size | "
+        + " | ".join(
+            f"{float(c['index_bytes']) / 2**20:.0f} MB" for c in configs.values()
+        )
+        + " |"
+    )
+    print(
+        "| Bulk load (s) | "
+        + " | ".join(str(c["load_seconds"]) for c in configs.values())
+        + " |"
+    )
+    for key, label in (
+        ("record_insert_median_ms", "Record insert (ms)"),
+        ("employee_insert_median_ms", "Employee insert (ms)"),
+    ):
+        print(
+            f"| {label} | "
+            + " | ".join(str(c["inserts"][key]) for c in configs.values())
+            + " |"
+        )
+    for query in next(iter(configs.values()))["reads_ms"]:
+        print(
+            f"| {query} (ms) | "
+            + " | ".join(str(c["reads_ms"][query]) for c in configs.values())
+            + " |"
+        )
+    print()
+
+
+def e8(database: str) -> None:
+    data = load(f"e8_partitioning_{database}")
+    if not data:
+        return
+    print(
+        f"### E8 — partitioning, {database}, {data['records']:,} records, {data['partitions']} partitions, median ms\n"
+    )
+    print("| Query | Plain | Plain + date index | Partitioned |")
+    print("|---|---|---|---|")
+    for name, r in data["results"].items():
+        print(
+            f"| {name} | {r['plain']['median_ms']} | {r['plain_date_index']['median_ms']} | {r['partitioned']['median_ms']} |"
+        )
+    print(
+        f"\nSingle-row insert: {data['single_insert_median_ms']} ms. Size: {data['total_bytes']}. Limits: {data['structural_limits']}\n"
+    )
+
+
 def main() -> None:
     e1()
     for database in ("acme_lab_s", "acme_lab_m"):
         e2(database)
         e3(database)
+        e4(database)
+        e5(database)
+        e6(database)
+        e8(database)
+    e7(100_000)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,85 @@
+{
+  "environment": {
+    "machine": "Linux-6.18.44-fc-v70-x86_64-with-glibc2.39",
+    "cpu_count": 4,
+    "memory_gb": 16,
+    "postgres": "16.14 (Ubuntu 16.14-0ubuntu0.24.04.1)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "163848kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-05T18:03:36+00:00"
+  },
+  "database": "acme_lab_s",
+  "employees_before": 10000,
+  "employees_after": 10000,
+  "results": {
+    "1000": {
+      "file_mb": 0.1,
+      "staging": {
+        "outcome": "imported (rolled back for the lab)",
+        "employees_inserted": 1000,
+        "seconds": 0.18,
+        "stage_seconds": 0.02,
+        "validate_seconds": 0.02,
+        "employees_seconds": 0.06,
+        "records_seconds": 0.04,
+        "current_seconds": 0.02,
+        "peak_rss_mb": 56
+      },
+      "application": {
+        "outcome": "imported (rolled back for the lab)",
+        "employees_inserted": 1000,
+        "seconds": 0.4,
+        "peak_rss_mb": 86
+      }
+    },
+    "10000": {
+      "file_mb": 1.1,
+      "staging": {
+        "outcome": "imported (rolled back for the lab)",
+        "employees_inserted": 10000,
+        "seconds": 1.52,
+        "stage_seconds": 0.08,
+        "validate_seconds": 0.13,
+        "employees_seconds": 0.65,
+        "records_seconds": 0.48,
+        "current_seconds": 0.16,
+        "peak_rss_mb": 57
+      },
+      "application": {
+        "outcome": "imported (rolled back for the lab)",
+        "employees_inserted": 10000,
+        "seconds": 3.84,
+        "peak_rss_mb": 119
+      }
+    },
+    "rejected_file": {
+      "outcome": "rejected",
+      "problems_reported": 3,
+      "sample": [
+        [
+          10003,
+          "email",
+          "invalid email address"
+        ],
+        [
+          10002,
+          "email",
+          "invalid email address"
+        ],
+        [
+          10001,
+          "email",
+          "invalid email address"
+        ]
+      ],
+      "seconds": 0.26,
+      "stage_seconds": 0.1,
+      "validate_seconds": 0.16,
+      "peak_rss_mb": 57
+    }
+  }
+}
