@@ -1,0 +1,33 @@
+{
+  "environment": {
+    "machine": "Linux-6.18.44-fc-v70-x86_64-with-glibc2.39",
+    "cpu_count": 4,
+    "memory_gb": 16,
+    "postgres": "16.14 (Ubuntu 16.14-0ubuntu0.24.04.1)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "163848kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-05T16:52:49+00:00"
+  },
+  "database": "acme_lab_s",
+  "count": 10000,
+  "method": "copy",
+  "seed_seconds": 10.3,
+  "sizes": {
+    "employees": {
+      "rows": 10000,
+      "size": "4528 kB"
+    },
+    "compensation_records": {
+      "rows": 178527,
+      "size": "30 MB"
+    },
+    "current_compensation": {
+      "rows": 43493,
+      "size": "5920 kB"
+    }
+  }
+}

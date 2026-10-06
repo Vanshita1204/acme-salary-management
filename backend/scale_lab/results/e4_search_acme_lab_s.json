@@ -1,0 +1,521 @@
+{
+  "environment": {
+    "machine": "Linux-6.18.44-fc-v70-x86_64-with-glibc2.39",
+    "cpu_count": 4,
+    "memory_gb": 16,
+    "postgres": "16.14 (Ubuntu 16.14-0ubuntu0.24.04.1)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "163848kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-05T18:00:43+00:00"
+  },
+  "database": "acme_lab_s",
+  "employees": 10000,
+  "results": {
+    "no_index": {
+      "2 chars": {
+        "median_ms": 0.89,
+        "min_ms": 0.77,
+        "max_ms": 1.16,
+        "plan": [
+          "Limit  (cost=0.91..19.27 rows=51 width=139) (actual time=0.228..0.316 rows=51 loops=1)",
+          "  Buffers: shared hit=182",
+          "  ->  Incremental Sort  (cost=0.91..1938.32 rows=5382 width=139) (actual time=0.227..0.312 rows=51 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Presorted Key: (lower(last_name)), (lower(first_name))",
+          "        Full-sort Groups: 2  Sort Method: quicksort  Average Memory: 29kB  Peak Memory: 29kB",
+          "        Buffers: shared hit=182",
+          "        ->  Index Scan using ix_employees_name_search on employees  (cost=0.29..1783.18 rows=5382 width=139) (actual time=0.007..0.287 rows=52 loops=1)",
+          "              Filter: ((((first_name || ' '::text) || last_name) ~~* '%an%'::text) OR (last_name ~~* '%an%'::text) OR ((email)::text ~~* '%an%'::text) OR ((code)::text ~~* '%an%'::text))",
+          "              Rows Removed by Filter: 128",
+          "              Buffers: shared hit=182",
+          "Planning Time: 0.183 ms",
+          "Execution Time: 0.331 ms"
+        ],
+        "matches": 3074
+      },
+      "3 chars, common": {
+        "median_ms": 1.47,
+        "min_ms": 1.33,
+        "max_ms": 1.58,
+        "plan": [
+          "Limit  (cost=1.66..62.26 rows=51 width=139) (actual time=0.332..0.964 rows=51 loops=1)",
+          "  Buffers: shared hit=608",
+          "  ->  Incremental Sort  (cost=1.66..1824.64 rows=1534 width=139) (actual time=0.331..0.960 rows=51 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Presorted Key: (lower(last_name)), (lower(first_name))",
+          "        Full-sort Groups: 2  Sort Method: quicksort  Average Memory: 29kB  Peak Memory: 29kB",
+          "        Buffers: shared hit=608",
+          "        ->  Index Scan using ix_employees_name_search on employees  (cost=0.29..1763.94 rows=1534 width=139) (actual time=0.056..0.933 rows=52 loops=1)",
+          "              Filter: ((((first_name || ' '::text) || last_name) ~~* '%son%'::text) OR (last_name ~~* '%son%'::text) OR ((email)::text ~~* '%son%'::text) OR ((code)::text ~~* '%son%'::text))",
+          "              Rows Removed by Filter: 555",
+          "              Buffers: shared hit=608",
+          "Planning Time: 0.191 ms",
+          "Execution Time: 0.982 ms"
+        ],
+        "matches": 614
+      },
+      "surname": {
+        "median_ms": 14.59,
+        "min_ms": 14.42,
+        "max_ms": 14.77,
+        "plan": [
+          "Limit  (cost=468.11..468.12 rows=6 width=139) (actual time=13.676..13.678 rows=2 loops=1)",
+          "  Buffers: shared hit=218",
+          "  ->  Sort  (cost=468.11..468.12 rows=6 width=139) (actual time=13.675..13.676 rows=2 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Sort Method: quicksort  Memory: 25kB",
+          "        Buffers: shared hit=218",
+          "        ->  Seq Scan on employees  (cost=0.00..468.03 rows=6 width=139) (actual time=5.057..13.659 rows=2 loops=1)",
+          "              Filter: ((((first_name || ' '::text) || last_name) ~~* '%abbott%'::text) OR (last_name ~~* '%abbott%'::text) OR ((email)::text ~~* '%abbott%'::text) OR ((code)::text ~~* '%abbott%'::text))",
+          "              Rows Removed by Filter: 9998",
+          "              Buffers: shared hit=218",
+          "Planning Time: 0.217 ms",
+          "Execution Time: 13.694 ms"
+        ],
+        "matches": 2
+      },
+      "full name part": {
+        "median_ms": 16.28,
+        "min_ms": 15.6,
+        "max_ms": 24.62,
+        "plan": [
+          "Limit  (cost=468.06..468.07 rows=4 width=139) (actual time=15.091..15.094 rows=1 loops=1)",
+          "  Buffers: shared hit=218",
+          "  ->  Sort  (cost=468.06..468.07 rows=4 width=139) (actual time=15.090..15.091 rows=1 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Sort Method: quicksort  Memory: 25kB",
+          "        Buffers: shared hit=218",
+          "        ->  Seq Scan on employees  (cost=0.00..468.02 rows=4 width=139) (actual time=10.105..15.081 rows=1 loops=1)",
+          "              Filter: ((((first_name || ' '::text) || last_name) ~~* '%joan abb%'::text) OR (last_name ~~* '%joan abb%'::text) OR ((email)::text ~~* '%joan abb%'::text) OR ((code)::text ~~* '%joan abb%'::text))",
+          "              Rows Removed by Filter: 9999",
+          "              Buffers: shared hit=218",
+          "Planning Time: 0.287 ms",
+          "Execution Time: 15.117 ms"
+        ],
+        "matches": 1
+      },
+      "code part": {
+        "median_ms": 26.11,
+        "min_ms": 16.96,
+        "max_ms": 27.22,
+        "plan": [
+          "Limit  (cost=471.99..472.12 rows=51 width=139) (actual time=24.666..24.676 rows=51 loops=1)",
+          "  Buffers: shared hit=218",
+          "  ->  Sort  (cost=471.99..472.25 rows=104 width=139) (actual time=24.664..24.668 rows=51 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Sort Method: quicksort  Memory: 38kB",
+          "        Buffers: shared hit=218",
+          "        ->  Seq Scan on employees  (cost=0.00..468.52 rows=104 width=139) (actual time=15.898..24.539 rows=100 loops=1)",
+          "              Filter: ((((first_name || ' '::text) || last_name) ~~* '%emp-0065%'::text) OR (last_name ~~* '%emp-0065%'::text) OR ((email)::text ~~* '%emp-0065%'::text) OR ((code)::text ~~* '%emp-0065%'::text))",
+          "              Rows Removed by Filter: 9900",
+          "              Buffers: shared hit=218",
+          "Planning Time: 0.440 ms",
+          "Execution Time: 24.718 ms"
+        ],
+        "matches": 100
+      },
+      "email part": {
+        "median_ms": 20.28,
+        "min_ms": 17.98,
+        "max_ms": 27.35,
+        "plan": [
+          "Limit  (cost=468.06..468.07 rows=4 width=139) (actual time=16.813..16.815 rows=1 loops=1)",
+          "  Buffers: shared hit=218",
+          "  ->  Sort  (cost=468.06..468.07 rows=4 width=139) (actual time=16.811..16.812 rows=1 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Sort Method: quicksort  Memory: 25kB",
+          "        Buffers: shared hit=218",
+          "        ->  Seq Scan on employees  (cost=0.00..468.02 rows=4 width=139) (actual time=11.263..16.799 rows=1 loops=1)",
+          "              Filter: ((((first_name || ' '::text) || last_name) ~~* '%abbott.659%'::text) OR (last_name ~~* '%abbott.659%'::text) OR ((email)::text ~~* '%abbott.659%'::text) OR ((code)::text ~~* '%abbott.659%'::text))",
+          "              Rows Removed by Filter: 9999",
+          "              Buffers: shared hit=218",
+          "Planning Time: 0.364 ms",
+          "Execution Time: 16.875 ms"
+        ],
+        "matches": 1
+      },
+      "no match": {
+        "median_ms": 14.93,
+        "min_ms": 13.44,
+        "max_ms": 15.65,
+        "plan": [
+          "Limit  (cost=468.11..468.12 rows=6 width=139) (actual time=12.654..12.655 rows=0 loops=1)",
+          "  Buffers: shared hit=218",
+          "  ->  Sort  (cost=468.11..468.12 rows=6 width=139) (actual time=12.652..12.653 rows=0 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Sort Method: quicksort  Memory: 25kB",
+          "        Buffers: shared hit=218",
+          "        ->  Seq Scan on employees  (cost=0.00..468.03 rows=6 width=139) (actual time=12.647..12.648 rows=0 loops=1)",
+          "              Filter: ((((first_name || ' '::text) || last_name) ~~* '%zzzqqq%'::text) OR (last_name ~~* '%zzzqqq%'::text) OR ((email)::text ~~* '%zzzqqq%'::text) OR ((code)::text ~~* '%zzzqqq%'::text))",
+          "              Rows Removed by Filter: 10000",
+          "              Buffers: shared hit=218",
+          "Planning Time: 0.235 ms",
+          "Execution Time: 12.671 ms"
+        ],
+        "matches": 0
+      }
+    },
+    "no_index_prefix_query": {
+      "prefix 'ab'": {
+        "median_ms": 2.94,
+        "min_ms": 2.78,
+        "max_ms": 3.03,
+        "plan": [
+          "Limit  (cost=368.01..368.02 rows=1 width=139) (actual time=2.217..2.219 rows=9 loops=1)",
+          "  Buffers: shared hit=218",
+          "  ->  Sort  (cost=368.01..368.02 rows=1 width=139) (actual time=2.215..2.216 rows=9 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Sort Method: quicksort  Memory: 26kB",
+          "        Buffers: shared hit=218",
+          "        ->  Seq Scan on employees  (cost=0.00..368.00 rows=1 width=139) (actual time=0.139..2.202 rows=9 loops=1)",
+          "              Filter: (lower(last_name) ~~ 'ab%'::text)",
+          "              Rows Removed by Filter: 9991",
+          "              Buffers: shared hit=218",
+          "Planning Time: 0.077 ms",
+          "Execution Time: 2.235 ms"
+        ]
+      },
+      "prefix 'abbott'": {
+        "median_ms": 3.02,
+        "min_ms": 2.64,
+        "max_ms": 3.51,
+        "plan": [
+          "Limit  (cost=368.01..368.02 rows=1 width=139) (actual time=2.313..2.315 rows=2 loops=1)",
+          "  Buffers: shared hit=218",
+          "  ->  Sort  (cost=368.01..368.02 rows=1 width=139) (actual time=2.311..2.312 rows=2 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Sort Method: quicksort  Memory: 25kB",
+          "        Buffers: shared hit=218",
+          "        ->  Seq Scan on employees  (cost=0.00..368.00 rows=1 width=139) (actual time=1.009..2.301 rows=2 loops=1)",
+          "              Filter: (lower(last_name) ~~ 'abbott%'::text)",
+          "              Rows Removed by Filter: 9998",
+          "              Buffers: shared hit=218",
+          "Planning Time: 0.106 ms",
+          "Execution Time: 2.334 ms"
+        ]
+      }
+    },
+    "btree_prefix": {
+      "prefix 'ab'": {
+        "median_ms": 0.46,
+        "min_ms": 0.36,
+        "max_ms": 0.75,
+        "plan": [
+          "Limit  (cost=162.84..162.85 rows=1 width=139) (actual time=0.039..0.041 rows=9 loops=1)",
+          "  Buffers: shared hit=10",
+          "  ->  Sort  (cost=162.84..162.85 rows=1 width=139) (actual time=0.039..0.040 rows=9 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Sort Method: quicksort  Memory: 26kB",
+          "        Buffers: shared hit=10",
+          "        ->  Bitmap Heap Scan on employees  (cost=5.08..162.83 rows=1 width=139) (actual time=0.015..0.029 rows=9 loops=1)",
+          "              Filter: (lower(last_name) ~~ 'ab%'::text)",
+          "              Heap Blocks: exact=8",
+          "              Buffers: shared hit=10",
+          "              ->  Bitmap Index Scan on lab_btree_last_prefix  (cost=0.00..5.08 rows=79 width=0) (actual time=0.008..0.008 rows=9 loops=1)",
+          "                    Index Cond: ((lower(last_name) ~>=~ 'ab'::text) AND (lower(last_name) ~<~ 'ac'::text))",
+          "                    Buffers: shared hit=2",
+          "Planning Time: 0.081 ms",
+          "Execution Time: 0.057 ms"
+        ]
+      },
+      "prefix 'abbott'": {
+        "median_ms": 0.36,
+        "min_ms": 0.3,
+        "max_ms": 0.41,
+        "plan": [
+          "Limit  (cost=162.84..162.85 rows=1 width=139) (actual time=0.098..0.100 rows=2 loops=1)",
+          "  Buffers: shared hit=4",
+          "  ->  Sort  (cost=162.84..162.85 rows=1 width=139) (actual time=0.098..0.099 rows=2 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Sort Method: quicksort  Memory: 25kB",
+          "        Buffers: shared hit=4",
+          "        ->  Bitmap Heap Scan on employees  (cost=5.08..162.83 rows=1 width=139) (actual time=0.025..0.039 rows=2 loops=1)",
+          "              Filter: (lower(last_name) ~~ 'abbott%'::text)",
+          "              Heap Blocks: exact=2",
+          "              Buffers: shared hit=4",
+          "              ->  Bitmap Index Scan on lab_btree_last_prefix  (cost=0.00..5.08 rows=79 width=0) (actual time=0.008..0.008 rows=2 loops=1)",
+          "                    Index Cond: ((lower(last_name) ~>=~ 'abbott'::text) AND (lower(last_name) ~<~ 'abbotu'::text))",
+          "                    Buffers: shared hit=2",
+          "Planning Time: 0.281 ms",
+          "Execution Time: 0.127 ms"
+        ]
+      }
+    },
+    "trigram_gin": {
+      "2 chars": {
+        "median_ms": 1.05,
+        "min_ms": 0.91,
+        "max_ms": 1.14,
+        "plan": [
+          "Limit  (cost=0.90..17.94 rows=51 width=139) (actual time=0.316..0.409 rows=51 loops=1)",
+          "  Buffers: shared hit=182",
+          "  ->  Incremental Sort  (cost=0.90..1947.61 rows=5824 width=139) (actual time=0.315..0.405 rows=51 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Presorted Key: (lower(last_name)), (lower(first_name))",
+          "        Full-sort Groups: 2  Sort Method: quicksort  Average Memory: 29kB  Peak Memory: 29kB",
+          "        Buffers: shared hit=182",
+          "        ->  Index Scan using ix_employees_name_search on employees  (cost=0.29..1785.39 rows=5824 width=139) (actual time=0.017..0.374 rows=52 loops=1)",
+          "              Filter: ((((first_name || ' '::text) || last_name) ~~* '%an%'::text) OR (last_name ~~* '%an%'::text) OR ((email)::text ~~* '%an%'::text) OR ((code)::text ~~* '%an%'::text))",
+          "              Rows Removed by Filter: 128",
+          "              Buffers: shared hit=182",
+          "Planning:",
+          "  Buffers: shared hit=4",
+          "Planning Time: 0.377 ms",
+          "Execution Time: 0.428 ms"
+        ],
+        "matches": 3074
+      },
+      "3 chars, common": {
+        "median_ms": 1.85,
+        "min_ms": 1.6,
+        "max_ms": 2.0,
+        "plan": [
+          "Limit  (cost=1.87..73.49 rows=51 width=139) (actual time=0.366..1.027 rows=51 loops=1)",
+          "  Buffers: shared hit=608",
+          "  ->  Incremental Sort  (cost=1.87..1814.87 rows=1291 width=139) (actual time=0.366..1.023 rows=51 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Presorted Key: (lower(last_name)), (lower(first_name))",
+          "        Full-sort Groups: 2  Sort Method: quicksort  Average Memory: 29kB  Peak Memory: 29kB",
+          "        Buffers: shared hit=608",
+          "        ->  Index Scan using ix_employees_name_search on employees  (cost=0.29..1762.72 rows=1291 width=139) (actual time=0.068..0.994 rows=52 loops=1)",
+          "              Filter: ((((first_name || ' '::text) || last_name) ~~* '%son%'::text) OR (last_name ~~* '%son%'::text) OR ((email)::text ~~* '%son%'::text) OR ((code)::text ~~* '%son%'::text))",
+          "              Rows Removed by Filter: 555",
+          "              Buffers: shared hit=608",
+          "Planning:",
+          "  Buffers: shared hit=4",
+          "Planning Time: 0.317 ms",
+          "Execution Time: 1.044 ms"
+        ],
+        "matches": 614
+      },
+      "surname": {
+        "median_ms": 0.63,
+        "min_ms": 0.57,
+        "max_ms": 1.01,
+        "plan": [
+          "Limit  (cost=170.10..170.11 rows=4 width=139) (actual time=0.034..0.036 rows=2 loops=1)",
+          "  Buffers: shared hit=38",
+          "  ->  Sort  (cost=170.10..170.11 rows=4 width=139) (actual time=0.034..0.035 rows=2 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Sort Method: quicksort  Memory: 25kB",
+          "        Buffers: shared hit=38",
+          "        ->  Bitmap Heap Scan on employees  (cost=155.56..170.06 rows=4 width=139) (actual time=0.027..0.029 rows=2 loops=1)",
+          "              Recheck Cond: ((((first_name || ' '::text) || last_name) ~~* '%abbott%'::text) OR (last_name ~~* '%abbott%'::text) OR ((email)::text ~~* '%abbott%'::text) OR ((code)::text ~~* '%abbott%'::text))",
+          "              Heap Blocks: exact=2",
+          "              Buffers: shared hit=38",
+          "              ->  BitmapOr  (cost=155.56..155.56 rows=4 width=0) (actual time=0.022..0.022 rows=0 loops=1)",
+          "                    Buffers: shared hit=36",
+          "                    ->  Bitmap Index Scan on lab_trgm_fullname  (cost=0.00..38.90 rows=1 width=0) (actual time=0.009..0.009 rows=2 loops=1)",
+          "                          Index Cond: (((first_name || ' '::text) || last_name) ~~* '%abbott%'::text)",
+          "                          Buffers: shared hit=9",
+          "                    ->  Bitmap Index Scan on lab_trgm_last  (cost=0.00..38.90 rows=1 width=0) (actual time=0.005..0.005 rows=2 loops=1)",
+          "                          Index Cond: (last_name ~~* '%abbott%'::text)",
+          "                          Buffers: shared hit=9",
+          "                    ->  Bitmap Index Scan on lab_trgm_email  (cost=0.00..38.90 rows=1 width=0) (actual time=0.004..0.005 rows=2 loops=1)",
+          "                          Index Cond: ((email)::text ~~* '%abbott%'::text)",
+          "                          Buffers: shared hit=9",
+          "                    ->  Bitmap Index Scan on lab_trgm_code  (cost=0.00..38.86 rows=1 width=0) (actual time=0.003..0.003 rows=0 loops=1)",
+          "                          Index Cond: ((code)::text ~~* '%abbott%'::text)",
+          "                          Buffers: shared hit=9",
+          "Planning:",
+          "  Buffers: shared hit=4",
+          "Planning Time: 0.314 ms",
+          "Execution Time: 0.055 ms"
+        ],
+        "matches": 2
+      },
+      "full name part": {
+        "median_ms": 0.82,
+        "min_ms": 0.73,
+        "max_ms": 0.87,
+        "plan": [
+          "Limit  (cost=239.62..239.63 rows=4 width=139) (actual time=0.094..0.095 rows=1 loops=1)",
+          "  Buffers: shared hit=57",
+          "  ->  Sort  (cost=239.62..239.63 rows=4 width=139) (actual time=0.093..0.094 rows=1 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Sort Method: quicksort  Memory: 25kB",
+          "        Buffers: shared hit=57",
+          "        ->  Bitmap Heap Scan on employees  (cost=225.08..239.58 rows=4 width=139) (actual time=0.089..0.090 rows=1 loops=1)",
+          "              Recheck Cond: ((((first_name || ' '::text) || last_name) ~~* '%joan abb%'::text) OR (last_name ~~* '%joan abb%'::text) OR ((email)::text ~~* '%joan abb%'::text) OR ((code)::text ~~* '%joan abb%'::text))",
+          "              Heap Blocks: exact=1",
+          "              Buffers: shared hit=57",
+          "              ->  BitmapOr  (cost=225.08..225.08 rows=4 width=0) (actual time=0.084..0.084 rows=0 loops=1)",
+          "                    Buffers: shared hit=56",
+          "                    ->  Bitmap Index Scan on lab_trgm_fullname  (cost=0.00..56.28 rows=1 width=0) (actual time=0.020..0.020 rows=1 loops=1)",
+          "                          Index Cond: (((first_name || ' '::text) || last_name) ~~* '%joan abb%'::text)",
+          "                          Buffers: shared hit=13",
+          "                    ->  Bitmap Index Scan on lab_trgm_last  (cost=0.00..56.28 rows=1 width=0) (actual time=0.011..0.011 rows=0 loops=1)",
+          "                          Index Cond: (last_name ~~* '%joan abb%'::text)",
+          "                          Buffers: shared hit=13",
+          "                    ->  Bitmap Index Scan on lab_trgm_email  (cost=0.00..56.29 rows=1 width=0) (actual time=0.049..0.049 rows=1 loops=1)",
+          "                          Index Cond: ((email)::text ~~* '%joan abb%'::text)",
+          "                          Buffers: shared hit=17",
+          "                    ->  Bitmap Index Scan on lab_trgm_code  (cost=0.00..56.23 rows=1 width=0) (actual time=0.004..0.004 rows=0 loops=1)",
+          "                          Index Cond: ((code)::text ~~* '%joan abb%'::text)",
+          "                          Buffers: shared hit=13",
+          "Planning:",
+          "  Buffers: shared hit=4",
+          "Planning Time: 0.277 ms",
+          "Execution Time: 0.115 ms"
+        ],
+        "matches": 1
+      },
+      "code part": {
+        "median_ms": 1.34,
+        "min_ms": 1.19,
+        "max_ms": 1.49,
+        "plan": [
+          "Limit  (cost=411.85..411.97 rows=51 width=139) (actual time=0.434..0.440 rows=51 loops=1)",
+          "  Buffers: shared hit=74",
+          "  ->  Sort  (cost=411.85..412.11 rows=104 width=139) (actual time=0.433..0.436 rows=51 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Sort Method: quicksort  Memory: 38kB",
+          "        Buffers: shared hit=74",
+          "        ->  Bitmap Heap Scan on employees  (cost=225.68..408.38 rows=104 width=139) (actual time=0.202..0.383 rows=100 loops=1)",
+          "              Recheck Cond: ((((first_name || ' '::text) || last_name) ~~* '%emp-0065%'::text) OR (last_name ~~* '%emp-0065%'::text) OR ((email)::text ~~* '%emp-0065%'::text) OR ((code)::text ~~* '%emp-0065%'::text))",
+          "              Rows Removed by Index Recheck: 12",
+          "              Heap Blocks: exact=6",
+          "              Buffers: shared hit=74",
+          "              ->  BitmapOr  (cost=225.68..225.68 rows=104 width=0) (actual time=0.171..0.172 rows=0 loops=1)",
+          "                    Buffers: shared hit=68",
+          "                    ->  Bitmap Index Scan on lab_trgm_fullname  (cost=0.00..56.28 rows=1 width=0) (actual time=0.010..0.010 rows=0 loops=1)",
+          "                          Index Cond: (((first_name || ' '::text) || last_name) ~~* '%emp-0065%'::text)",
+          "                          Buffers: shared hit=13",
+          "                    ->  Bitmap Index Scan on lab_trgm_last  (cost=0.00..56.28 rows=1 width=0) (actual time=0.007..0.007 rows=0 loops=1)",
+          "                          Index Cond: (last_name ~~* '%emp-0065%'::text)",
+          "                          Buffers: shared hit=13",
+          "                    ->  Bitmap Index Scan on lab_trgm_email  (cost=0.00..56.29 rows=1 width=0) (actual time=0.006..0.006 rows=0 loops=1)",
+          "                          Index Cond: ((email)::text ~~* '%emp-0065%'::text)",
+          "                          Buffers: shared hit=13",
+          "                    ->  Bitmap Index Scan on lab_trgm_code  (cost=0.00..56.73 rows=101 width=0) (actual time=0.148..0.148 rows=112 loops=1)",
+          "                          Index Cond: ((code)::text ~~* '%emp-0065%'::text)",
+          "                          Buffers: shared hit=29",
+          "Planning:",
+          "  Buffers: shared hit=4",
+          "Planning Time: 0.346 ms",
+          "Execution Time: 0.464 ms"
+        ],
+        "matches": 100
+      },
+      "email part": {
+        "median_ms": 0.55,
+        "min_ms": 0.49,
+        "max_ms": 0.72,
+        "plan": [
+          "Limit  (cost=309.14..309.15 rows=4 width=139) (actual time=0.037..0.038 rows=1 loops=1)",
+          "  Buffers: shared hit=69",
+          "  ->  Sort  (cost=309.14..309.15 rows=4 width=139) (actual time=0.037..0.037 rows=1 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Sort Method: quicksort  Memory: 25kB",
+          "        Buffers: shared hit=69",
+          "        ->  Bitmap Heap Scan on employees  (cost=294.60..309.10 rows=4 width=139) (actual time=0.034..0.035 rows=1 loops=1)",
+          "              Recheck Cond: ((((first_name || ' '::text) || last_name) ~~* '%abbott.659%'::text) OR (last_name ~~* '%abbott.659%'::text) OR ((email)::text ~~* '%abbott.659%'::text) OR ((code)::text ~~* '%abbott.659%'::text))",
+          "              Heap Blocks: exact=1",
+          "              Buffers: shared hit=69",
+          "              ->  BitmapOr  (cost=294.60..294.60 rows=4 width=0) (actual time=0.029..0.030 rows=0 loops=1)",
+          "                    Buffers: shared hit=68",
+          "                    ->  Bitmap Index Scan on lab_trgm_fullname  (cost=0.00..73.67 rows=1 width=0) (actual time=0.008..0.008 rows=0 loops=1)",
+          "                          Index Cond: (((first_name || ' '::text) || last_name) ~~* '%abbott.659%'::text)",
+          "                          Buffers: shared hit=17",
+          "                    ->  Bitmap Index Scan on lab_trgm_last  (cost=0.00..73.67 rows=1 width=0) (actual time=0.006..0.006 rows=0 loops=1)",
+          "                          Index Cond: (last_name ~~* '%abbott.659%'::text)",
+          "                          Buffers: shared hit=17",
+          "                    ->  Bitmap Index Scan on lab_trgm_email  (cost=0.00..73.67 rows=1 width=0) (actual time=0.010..0.010 rows=1 loops=1)",
+          "                          Index Cond: ((email)::text ~~* '%abbott.659%'::text)",
+          "                          Buffers: shared hit=17",
+          "                    ->  Bitmap Index Scan on lab_trgm_code  (cost=0.00..73.59 rows=1 width=0) (actual time=0.005..0.005 rows=0 loops=1)",
+          "                          Index Cond: ((code)::text ~~* '%abbott.659%'::text)",
+          "                          Buffers: shared hit=17",
+          "Planning:",
+          "  Buffers: shared hit=4",
+          "Planning Time: 0.288 ms",
+          "Execution Time: 0.055 ms"
+        ],
+        "matches": 1
+      },
+      "no match": {
+        "median_ms": 0.62,
+        "min_ms": 0.47,
+        "max_ms": 0.67,
+        "plan": [
+          "Limit  (cost=170.10..170.11 rows=4 width=139) (actual time=0.014..0.015 rows=0 loops=1)",
+          "  Buffers: shared hit=36",
+          "  ->  Sort  (cost=170.10..170.11 rows=4 width=139) (actual time=0.014..0.014 rows=0 loops=1)",
+          "        Sort Key: (lower(last_name)), (lower(first_name)), id",
+          "        Sort Method: quicksort  Memory: 25kB",
+          "        Buffers: shared hit=36",
+          "        ->  Bitmap Heap Scan on employees  (cost=155.56..170.06 rows=4 width=139) (actual time=0.012..0.012 rows=0 loops=1)",
+          "              Recheck Cond: ((((first_name || ' '::text) || last_name) ~~* '%zzzqqq%'::text) OR (last_name ~~* '%zzzqqq%'::text) OR ((email)::text ~~* '%zzzqqq%'::text) OR ((code)::text ~~* '%zzzqqq%'::text))",
+          "              Buffers: shared hit=36",
+          "              ->  BitmapOr  (cost=155.56..155.56 rows=4 width=0) (actual time=0.011..0.012 rows=0 loops=1)",
+          "                    Buffers: shared hit=36",
+          "                    ->  Bitmap Index Scan on lab_trgm_fullname  (cost=0.00..38.90 rows=1 width=0) (actual time=0.004..0.004 rows=0 loops=1)",
+          "                          Index Cond: (((first_name || ' '::text) || last_name) ~~* '%zzzqqq%'::text)",
+          "                          Buffers: shared hit=9",
+          "                    ->  Bitmap Index Scan on lab_trgm_last  (cost=0.00..38.90 rows=1 width=0) (actual time=0.002..0.003 rows=0 loops=1)",
+          "                          Index Cond: (last_name ~~* '%zzzqqq%'::text)",
+          "                          Buffers: shared hit=9",
+          "                    ->  Bitmap Index Scan on lab_trgm_email  (cost=0.00..38.90 rows=1 width=0) (actual time=0.002..0.002 rows=0 loops=1)",
+          "                          Index Cond: ((email)::text ~~* '%zzzqqq%'::text)",
+          "                          Buffers: shared hit=9",
+          "                    ->  Bitmap Index Scan on lab_trgm_code  (cost=0.00..38.86 rows=1 width=0) (actual time=0.002..0.002 rows=0 loops=1)",
+          "                          Index Cond: ((code)::text ~~* '%zzzqqq%'::text)",
+          "                          Buffers: shared hit=9",
+          "Planning:",
+          "  Buffers: shared hit=4",
+          "Planning Time: 0.259 ms",
+          "Execution Time: 0.030 ms"
+        ],
+        "matches": 0
+      }
+    },
+    "trigram_gin_driver_default": {
+      "2 chars": {
+        "median_ms": 0.77
+      },
+      "3 chars, common": {
+        "median_ms": 1.52
+      },
+      "surname": {
+        "median_ms": 0.47
+      },
+      "full name part": {
+        "median_ms": 0.74
+      },
+      "code part": {
+        "median_ms": 1.26
+      },
+      "email part": {
+        "median_ms": 0.69
+      },
+      "no match": {
+        "median_ms": 0.41
+      }
+    }
+  },
+  "btree_prefix_index": {
+    "build_seconds": 0.01,
+    "bytes": 163840
+  },
+  "trigram_indexes": {
+    "build_seconds": {
+      "lab_trgm_fullname": 0.04,
+      "lab_trgm_last": 0.02,
+      "lab_trgm_email": 0.07,
+      "lab_trgm_code": 0.02
+    },
+    "bytes": {
+      "lab_trgm_fullname": 802816,
+      "lab_trgm_last": 532480,
+      "lab_trgm_email": 1302528,
+      "lab_trgm_code": 376832
+    },
+    "total_build_seconds": 0.15,
+    "total_bytes": 3014656
+  },
+  "result_mismatches": []
+}

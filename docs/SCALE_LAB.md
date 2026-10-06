@@ -45,7 +45,9 @@ Compare `DISTINCT ON`, a window function (`ROW_NUMBER`), and a denormalised curr
 Measure: latency of a directory page and of a full-table aggregation.
 Outcome: confirms or refutes the current-compensation table in the data model.
 
-### Phase 2 — after submission
+### Phase 2 — after submission (run in Phase 16)
+
+Results are in `docs/PERFORMANCE.md`. Two deliberate departures from the plan below: **L (10 million employees) was not run** (it needs well over 100 GB of disk and many hours to load), so E8 ran on M; and E6 loaded 100,000 and 1,000,000 rows into a database that already held 1,000,000 employees, rolled back afterwards so the dataset stayed unchanged. E4–E8 are `backend/scale_lab/e4_search.py` … `e8_partitioning.py`.
 
 **E4. Search**
 Compare `ILIKE '%term%'` without an index, a B-tree prefix search, and a `pg_trgm` GIN index.
