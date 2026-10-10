@@ -1,7 +1,7 @@
 """Org structure reference data: departments, job titles and job levels.
 
 Lookup tables rather than free text on employees, so "Engineering" and "engineering"
-can't become two departments (REQUIREMENTS §1). Names are CITEXT: unique ignoring case.
+can't become two departments (SPECIFICATION §1). Names are CITEXT: unique ignoring case.
 """
 
 from datetime import datetime

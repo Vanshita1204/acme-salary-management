@@ -13,7 +13,7 @@ Instructions given to the coding agent are committed in _[e.g. `CLAUDE.md`]_.
 ## How I Worked with AI
 - Requirements and scope were settled before any code was written; early scaffold code generated before scope was confirmed was discarded.
 - AI suggestions were checked against the assessment brief and Incubyte's clarifications, not accepted on plausibility.
-- Implementation went phase by phase against `docs/IMPLEMENTATION_PLAN.md`, and the plan, `DATABASE_DESIGN.md` and `REQUIREMENTS.md` were updated in the same step whenever a decision changed them.
+- Implementation went phase by phase against `docs/IMPLEMENTATION_PLAN.md`, and the plan, `DATABASE_DESIGN.md`, `REQUIREMENTS.md` and `SPECIFICATION.md` were updated in the same step whenever a decision changed them.
 - Each change was verified by running it, not by reading it: the test suite against a real Postgres (unit tests for pure domain logic, integration tests for constraints and the API), `alembic check` plus migration round-trips for schema changes, and live calls against the seeded database for endpoints.
 - Where the right behavior was my call (reason model, CTC rules, migration strategy), the agent asked instead of guessing; where I disagreed with its default, I said so and it was redone (items 18, 20–22).
 
@@ -41,7 +41,7 @@ Instructions given to the coding agent are committed in _[e.g. `CLAUDE.md`]_.
 **4. Comprehensive spec vs. one-page constraint**
 - **Prompt:** Asked AI to make the requirements doc more comprehensive.
 - **AI output:** Flagged that the brief asks for a one-page document.
-- **Decision:** Split into a one-page summary (Part 1) and a detailed specification (Part 2) in the same file.
+- **Decision:** Split into a one-page summary (Part 1) and a detailed specification (Part 2) in the same file. Later moved into two files: `REQUIREMENTS.md` (one page) and `SPECIFICATION.md`.
 
 **5. Static vs. live exchange rates**
 - **AI output:** Proposed a static exchange-rate table for deterministic analytics.
@@ -154,7 +154,7 @@ Instructions given to the coding agent are committed in _[e.g. `CLAUDE.md`]_.
 
 **25. Domain layer: two spec gaps resolved explicitly**
 - **AI output:** While writing the Phase 2 pure functions, the agent hit two places the requirements didn't settle and flagged both instead of guessing silently.
-- **CSV template:** FR-5 listed a single "name" column, but the employee model stores first and last name separately. The template uses `first_name` / `last_name`, and `REQUIREMENTS.md` was updated to match.
+- **CSV template:** FR-5 listed a single "name" column, but the employee model stores first and last name separately. The template uses `first_name` / `last_name`, and `SPECIFICATION.md` was updated to match.
 - **Average increase across a currency change:** excluded, alongside corrections. Comparing totals in two currencies isn't meaningful, and FR-7 already defers cross-currency increases.
 - **Enforced mechanically:** a unit test parses every `app/domain/` module and fails on any database, HTTP or API import.
 
@@ -198,7 +198,7 @@ Instructions given to the coding agent are committed in _[e.g. `CLAUDE.md`]_.
 
 **33. No table for department, title or level**
 - **Prompt:** "why is there no table for role"
-- **AI output:** Admitted there was no recorded reason. These were free text since Phase 1, which contradicts REQUIREMENTS §1 ("inconsistent department or title names go uncaught"). "Software Engineer" and "software engineer" would split grouped statistics and outlier peer groups, and levels sorted as text (`L10` before `L2`).
+- **AI output:** Admitted there was no recorded reason. These were free text since Phase 1, which contradicts SPECIFICATION §1 ("inconsistent department or title names go uncaught"). "Software Engineer" and "software engineer" would split grouped statistics and outlier peer groups, and levels sorted as text (`L10` before `L2`).
 - **Decision:** Inserted as Phase 7A (not renumbered, since later phase numbers are referenced throughout code and docs), before CSV import and analytics, which both depend on it:
   - case-insensitive unique lookup tables;
   - titles shared across departments, like the compensation-type catalog;
