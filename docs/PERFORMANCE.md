@@ -52,7 +52,7 @@ All results are synthetic data on one local machine. They show how queries and t
 Page of 50, median:
 
 | Employees | Sort | Method | First page | Middle page | Last page |
-| --- | --- | --- | ---| --- | --- |
+| --- | --- | --- | --- | --- | --- |
 | 10,000 | name | `OFFSET` | 0.46 ms | 5.43 ms | 10.25 ms |
 | 10,000 | name | keyset | 0.41 ms | 0.51 ms | 0.49 ms |
 | 1,000,000 | hire date | `OFFSET` | 0.48 ms | 864 ms | 1,641 ms |
@@ -83,7 +83,7 @@ Workloads: **page** (50 employees with total compensation), **aggregate** (total
 
 "No index" = without the composite index `(employee_id, compensation_type_id, effective_date DESC)`.
 
-**Result: confirmed, with one limit.**
+**Result:** confirmed, with one limit.
 
 - **Page:** all strategies take ~2 ms *if the composite index exists*; without it, a page at 1M takes ~2.5–2.9 s. The index is essential for every per-employee history read.
 - **Whole population:** the table is 3–4× faster than deriving from history (4.2 s vs 16–19 s for the aggregate at 1M).
@@ -144,7 +144,7 @@ Median ms at M, the directory's real page query:
 
 At S, rare terms take 15–26 ms unindexed and ~1 ms indexed. The four trigram indexes total 161 MB (17 s to build). Results were identical with and without them.
 
-**Result: confirmed, with two corrections.**
+**Result:** confirmed, with two corrections.
 
 1. Short or common terms never needed the index, because the ordered scan stops early. A *short term few people match* stays slow and wasn't measured.
 2. **The index alone is not enough.** psycopg 3 prepares a statement after 5 executions, and Postgres can switch to a generic plan that can't know the term is rare. The same search went from ~2 ms to ~4,000 ms after about ten executions. Searching at 1M needs the indexes **and** per-term plans (`prepare_threshold=None` or `plan_cache_mode = force_custom_plan`).
@@ -179,7 +179,7 @@ Median ms:
 Both paths run the full job in one transaction, then roll back. 1,000,000 employees already present.
 
 | Rows | Path | Seconds | Peak memory |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | 10,000 | application | 4.5 | 120 MB |
 | 10,000 | staging | 2.6 | 57 MB |
 | 100,000 | staging | 16.1 | 64 MB |

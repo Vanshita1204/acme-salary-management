@@ -421,7 +421,7 @@ CREATE INDEX ix_exchange_rates_latest ON exchange_rates (currency, rate_date DES
 ## Business rules → enforcement mechanism (§6 traceability, updated)
 
 | Rule | Mechanism |
-|---|---| 
+| --- | --- |
 
 | Base salary > 0 | `BEFORE INSERT` trigger on `compensation_records`, checking `is_base_pay` on the referenced type |
 | Other components ≥ 0 | table-level `CHECK (amount >= 0)` on `compensation_records` |
@@ -446,7 +446,7 @@ CREATE INDEX ix_exchange_rates_latest ON exchange_rates (currency, rate_date DES
 ## Indexing summary (ties to FR-1 and §1's 500 ms target)
 
 | Access pattern | Index |
-|---|---|
+| --- | --- |
 | Filter by department / country / title / level / status / company | one btree index per column (department, title and level by id; composable via bitmap AND) |
 | Sort by name (keyset) | `(lower(last_name), lower(first_name))` |
 | Sort by hire date (keyset) | `(hire_date, id)` |
