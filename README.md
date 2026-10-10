@@ -10,7 +10,7 @@ HR tool to find any employee, see their full compensation history, record change
 |---|---|
 | `backend/` | FastAPI + SQLAlchemy + PostgreSQL. Compensation history is append-only, enforced by the database. |
 | `frontend/` | React + TypeScript + Vite. See `frontend/README.md`. |
-| `docs/` | `REQUIREMENTS.md`, `DATABASE_DESIGN.md`, `IMPLEMENTATION_PLAN.md`, `PERFORMANCE.md`, `SCALE_LAB.md`, `AI_USAGE.md` |
+| `docs/` | `REQUIREMENTS.md` (one page), `SPECIFICATION.md`, `DATABASE_DESIGN.md`, `IMPLEMENTATION_PLAN.md`, `PERFORMANCE.md`, `SCALE_LAB.md`, `AI_USAGE.md` |
 | `Dockerfile`, `render.yaml`, `deploy/` | The hosted instance (below) |
 
 ## Run it locally
@@ -26,6 +26,15 @@ cd frontend && npm install && npm run dev    # http://localhost:5173
 ```
 
 Tests: `cd backend && pytest` (uses its own `<db>_test` database and never touches the network) and `cd frontend && npm test`.
+
+### Test results
+
+| Suite | Tests | Result | Time | Coverage |
+|---|---|---|---|---|
+| Backend (pytest) | 539 | all passed | ~25–38 s | 93% of `app/` (`pytest --cov=app`) |
+| Frontend (vitest) | 81 (10 files) | all passed | ~3 s | not measured |
+
+Run on 2026-10-10. The backend suite includes unit tests for the pure domain layer and integration tests against a real Postgres, so the database must be running (`docker compose up -d db`).
 
 ## Deploy
 
@@ -48,4 +57,4 @@ The daily job (00:10 UTC) refreshes exchange rates and makes future-dated pay ch
 
 **Optional hardening:** create a role that can only read and insert compensation records (`APP_DB_PASSWORD=… python -m app.db.grants acme_app`) and set `RUNTIME_DATABASE_URL` to it. Migrations keep using `DATABASE_URL`. Managed Postgres plans that don't allow creating roles skip this; the database triggers still block changes to history.
 
-There is no login: the app is open to anyone with the URL, which is acceptable for a demo on synthetic data only (see Future Roadmap in `docs/REQUIREMENTS.md`).
+There is no login: the app is open to anyone with the URL, which is acceptable for a demo on synthetic data only (see Future Roadmap in `docs/SPECIFICATION.md`).
