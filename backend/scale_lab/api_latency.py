@@ -1,4 +1,4 @@
-"""Phase 14: the 500 ms check (REQUIREMENTS §1, §7) over the whole read API, not just the first
+"""Phase 14: the 500 ms check (SPECIFICATION §1, §7) over the whole read API, not just the first
 directory pages: realistic combinations of search, filters and sorts, the CSV export, and
 every pay-insight view, each timed through the full FastAPI stack.
 

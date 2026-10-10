@@ -1,23 +1,27 @@
 # Scale Lab — Benchmark Plan
 
 ## Purpose
+
 The deployed application serves 10,000 employees, as the brief requires. This lab runs the same schema and queries locally at 10x, 100x, and 1,000x that size to find where each design choice breaks, why, and what fixes it.
 
 All results come from **synthetic data on a single local machine**. They demonstrate query and data-modelling behaviour at volume, not production traffic or concurrency.
 
 ## Setup
+
 - **Database:** PostgreSQL in Docker, same version as the deployed instance, default configuration unless an experiment states otherwise.
 - **Data:** the application's seed script with a size flag, e.g. `python -m app.seed.employees --count 1000000`. Fixed random seed, so every run produces identical data.
 - **Hardware:** CPU, RAM, disk type, and Postgres settings recorded alongside every result.
 
 | Dataset | Employees | Compensation records (~3 per employee) |
-|---|---|---|
+| --- | --- | --- |
 | S | 10,000 | ~30,000 |
 | M | 1,000,000 | ~3,000,000 |
 | L | 10,000,000 | ~30,000,000 |
 
 ## Method
+
 For every experiment:
+
 1. State the hypothesis before running anything.
 2. Run `ANALYZE` after loading data, so the planner has current statistics.
 3. Execute each query 5 times after one warm-up run; report the median.
@@ -70,4 +74,5 @@ Range-partition compensation records by effective date.
 Measure: date-range report latency with and without partition pruning, and the impact on the current-compensation query.
 
 ## Deliverable
+
 `docs/PERFORMANCE.md`: one entry per experiment, plus a summary of which decisions in the application each result confirmed or changed.

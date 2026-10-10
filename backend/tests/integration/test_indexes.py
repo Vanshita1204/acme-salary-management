@@ -1,4 +1,4 @@
-"""Indexes behind the 500 ms target (REQUIREMENTS §7): "indexes on every filtered column".
+"""Indexes behind the 500 ms target (SPECIFICATION §7): "indexes on every filtered column".
 
 Checked against the schema Alembic actually built, and tied to the code that builds the
 directory's filters, so adding a filter without an index fails here.

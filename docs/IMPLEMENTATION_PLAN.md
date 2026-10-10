@@ -1,8 +1,9 @@
 # Implementation Plan — ACME Salary Management
 
-Build order for turning the scaffold (FastAPI app, Postgres via docker-compose, Alembic, pytest — all currently empty) into the system described in `docs/REQUIREMENTS.md`, on the schema detailed in `docs/DATABASE_DESIGN.md`. Phases are sequential where a later one depends on an earlier one's output; within a phase, tasks can interleave.
+Build order for turning the scaffold (FastAPI app, Postgres via docker-compose, Alembic, pytest — all currently empty) into the system described in `docs/REQUIREMENTS.md` and `docs/SPECIFICATION.md`, on the schema detailed in `docs/DATABASE_DESIGN.md`. Phases are sequential where a later one depends on an earlier one's output; within a phase, tasks can interleave.
 
 ## Guiding principles (from §7 and AI_USAGE.md)
+
 - Domain logic (compensation math, currency conversion, import validation, analytics formulas) is written as pure functions first, unit-tested with no DB or network, before any endpoint touches them.
 - Compensation history is append-only from the first migration — no update/delete path on `compensation_records` exists anywhere in the code.
 - Business rules (base-pay amount > 0, unique email/code, valid effective date, change reason must exist) are database constraints, not just Pydantic validation.
@@ -11,7 +12,9 @@ Build order for turning the scaffold (FastAPI app, Postgres via docker-compose, 
 ---
 
 ## Phase 0 — Environment: Docker, settings, DB wiring
+
 Everything Phase 1 needs before it can touch a table. Done.
+
 - `docker-compose.yml`: Postgres 16 service, with a `pg_isready` healthcheck so startup can be polled instead of guessed at. Credentials (`POSTGRES_USER`/`POSTGRES_PASSWORD`/`POSTGRES_DB`) come from `backend/.env` via `env_file` — nothing hardcoded. Postgres only applies them when the data volume is first created, so changing the password later also needs `ALTER ROLE` (or a fresh volume).
 - `app/core/config.py`: a `Settings` (pydantic-settings) object reading `DATABASE_URL`, `EXCHANGE_RATE_API_URL` and `ENVIRONMENT` from `.env` (`.env.example` committed with keys only, `.env` gitignored). `DATABASE_URL` is required — no in-code default, so a missing value fails at startup instead of silently pointing somewhere (Phase 15 gave `EXCHANGE_RATE_API_URL` a default, the one provider the app is built for, and made `postgres://` URLs from hosts work). Extra keys in `.env` (the `POSTGRES_*` ones docker-compose uses) are ignored.
 - `app/db/session.py`: SQLAlchemy `engine`, `SessionLocal`, declarative `Base`, and a `get_db()` FastAPI dependency.
@@ -20,9 +23,11 @@ Everything Phase 1 needs before it can touch a table. Done.
 - **Done when (verified):** `docker compose up -d` brings up a healthy Postgres container; the app's `Settings`/`engine` connect to it (`SELECT 1` succeeds); `alembic upgrade head` runs cleanly against it (currently a no-op — zero migrations until Phase 1); `pytest` passes; `TestClient(app).get("/health")` returns `200`.
 
 ## Phase 1 — Foundation: models, reference data, basic CRUD — Done
+
 Three steps, in order — nothing in Phase 2 onward starts until all three are done.
 
 ### 1.1 Models & migrations — Done
+
 - SQLAlchemy models for every table in `docs/DATABASE_DESIGN.md`: `Currency`, `Country`, `Company`, `CompensationType`, `ChangeReason`, `Employee`, `CompensationRecord`, `CurrentCompensation`, `ExchangeRate`.
 - Alembic migrations in dependency order: `currencies` → `countries` → `companies` → `compensation_types` → `change_reasons` → `employees` → `compensation_records` → `current_compensation` → `exchange_rates`.
 - Constraints backing §6: base-pay amount `> 0` / other types `>= 0` (trigger, keyed off `is_base_pay`), `period_months > 0`, unique `employees.email`/`.code`, the FK from `change_reason_id` to the shared `change_reasons` list, the `employees.currency`-must-match-new-record-currency trigger, the append-only trigger on `compensation_records`, and the "exactly one base-pay type" partial unique index.
@@ -31,7 +36,9 @@ Three steps, in order — nothing in Phase 2 onward starts until all three are d
 - **Done when (verified):** `alembic upgrade head` creates the full schema against the docker-compose Postgres, `alembic check` reports no drift between models and schema, and `downgrade base` → `upgrade head` round-trips cleanly. Every constraint in `docs/DATABASE_DESIGN.md`'s business-rules table has an integration test in `tests/integration/test_schema_constraints.py` that violates it and asserts the specific constraint/trigger rejected it. Tests run inside a rolled-back transaction and use ISO's reserved test codes (`XTS`, `XA`, …) so they never collide with real reference data.
 
 ### 1.2 Reference-data pre-population — Done
+
 Small, structural lookup data the app can't function without — not the 10,000-employee synthetic seed (that's Phase 3). Loaded by an idempotent script rather than a migration data step, so migrations stay schema-only: `python -m app.seed.reference` (run after `alembic upgrade head`; only inserts what's missing, safe to re-run).
+
 - `currencies` and `countries` (with `default_currency`): the **full** ISO 3166-1 / ISO 4217 lists, not a hand-picked subset — 248 countries, 149 currencies (exactly the set that is some country's legal tender). Sourced at seed time from third-party packages, not hand-maintained (`app/seed/iso_data.py`): pycountry for ISO codes and currency names, babel (Unicode CLDR) for English country names and each country's current legal-tender currency — ISO doesn't publish a country → currency mapping. Upgrading those packages is how the data gets updated. `CURRENCY_OVERRIDES` patches places where CLDR lags (currently Bulgaria → EUR, euro since 2026-01-01). Countries with no legal tender (Antarctica) are omitted.
 - `companies`: 100 synthetic companies generated with Faker (`python -m app.seed.companies [--count N] [--seed S]`, default 100 / seed 1204). Deterministic for a given seed, count and pinned Faker version, so re-running inserts nothing; covered by `tests/integration/test_companies_seed.py`. Separate command from `app.seed.reference` for now.
 - `compensation_types`: the starting universal catalog in `app/seed/compensation_types.py` (`python -m app.seed.compensation_types`; edit `CATALOG` and re-run to extend) — 13 types:
@@ -48,7 +55,9 @@ Small, structural lookup data the app can't function without — not the 10,000-
 - **Done when (verified):** after 1.1's migrations and the loads above, every lookup table is populated and the smoke checks pass — every country's `default_currency` resolves (`check_reference_data`), exactly one base-pay type exists (`check_compensation_types`), and the reasons the rules rely on exist (`check_change_reasons`). Each loader is also tested to insert nothing on a second run.
 
 ### 1.3 Basic CRUD — Done
+
 Minimal, business-rule-light REST endpoints over the models above — enough to exercise the schema end-to-end before building the real FR-driven endpoints (Phases 5–12).
+
 - Simple create/list/get for `companies`.
 - Compensation-type catalog management — **exposed to the Phase 13 HR UI** (HR adds types like a new bonus or reimbursement without a code change):
   - `GET /compensation-types`, `GET /compensation-types/{id}`.
@@ -72,8 +81,11 @@ Minimal, business-rule-light REST endpoints over the models above — enough to 
 - **Done when (verified):** every model can be created and read back through the API against the 1.2 reference data, and every DB rule comes back as a 4xx — `tests/integration/test_crud_api.py`, which loads the 1.2 seeds inside the test transaction. Also checked live: the read endpoints against the seeded dev database.
 
 ## Phase 2 — Domain layer (pure functions, no DB/network) — Done
+
 Lives under `backend/app/domain/`, unit-tested under `backend/tests/unit/` (no database, no network, fixed inputs only).
+
 - **Compensation** (`compensation.py`):
+
   - `annualize(amount, period_months)` = `amount * 12 / period_months`.
   - `total_compensation(components)`: the sum of annualized current components **that count toward total** (`compensation_types.counts_toward_total`). This settles the reimbursement question per type rather than per category, since employers differ on what goes into CTC — see `docs/DATABASE_DESIGN.md`.
   - `percentage_change(previous, new)`: `None` when there's no base.
@@ -94,8 +106,11 @@ Lives under `backend/app/domain/`, unit-tested under `backend/tests/unit/` (no d
   - `annualize` is tested for monthly/quarterly/semi-annual/annual (and 24-month) periods.
 
 ## Phase 3 — Seed script (10,000-employee synthetic dataset) — Done
+
 Distinct from Phase 1.2's reference-data pre-population — this generates the large synthetic employee population on top of it.
+
 - **Command:** `python -m app.seed.employees [--count N] [--seed S] [--as-of YYYY-MM-DD] [--batch-size B]` (defaults: 10,000 / 1204 / today / 5,000).
+
 - **Deterministic:** the same count, seed, as-of date and pinned Faker version produce identical data. Seed-only constants (pay levels, the USD rates for USD-paid staff) never read live exchange rates.
 - **Fresh databases only:** refuses to run if employees exist. History is append-only and can't be cleared selectively, so the reset is `alembic downgrade base && alembic upgrade head` plus the 1.2 seeds. It fails with a list of what's missing if 1.2 hasn't run.
 - **Population:**
@@ -121,8 +136,11 @@ Distinct from Phase 1.2's reference-data pre-population — this generates the l
 - **Known simplification:** no relocations or currency changes in the generated history — those need FR-7's ordering (update the employee, then write records) and come with Phase 11.
 
 ## Phase 4 — Scale Lab, Phase 1 experiments (before submission) — Done
+
 Per `docs/SCALE_LAB.md` E1–E3, run at S (10k) and M (1M); full results in **`docs/PERFORMANCE.md`**.
+
 - **Harness:** `backend/scale_lab/`.
+
   - Each experiment builds its own `acme_lab_*` database with the app's migrations and seeds, so the dev database is never touched.
   - Timing: warm-up + 5 runs, median reported, `EXPLAIN (ANALYZE, BUFFERS)` captured.
   - Raw results go to `scale_lab/results/*.json`; `python -m scale_lab.report` renders the tables.
@@ -137,7 +155,9 @@ Per `docs/SCALE_LAB.md` E1–E3, run at S (10k) and M (1M); full results in **`d
 - **Done when (verified):** the pagination and current-compensation design used in Phase 5+ rests on these measurements (`docs/PERFORMANCE.md` summary table).
 
 ## Phase 5 — Employee Directory API (FR-1) — Done
+
 - **`GET /employees`:**
+
   - **Search:** `q` matches full name, last name, email or employee code, case-insensitive, with LIKE wildcards escaped.
   - **Filters:** `department`, `country`, `job_title`, `job_level`, `status`. They combine with AND; repeat one for OR within it (`?country=IN&country=US`).
   - **Sort:** `name` (default), `hire_date` or `compensation`, with `order=asc|desc`. Ties always break on `id`.
@@ -152,6 +172,7 @@ Per `docs/SCALE_LAB.md` E1–E3, run at S (10k) and M (1M); full results in **`d
 - **Done when (verified):** `python -m scale_lab.directory_latency` — 15 search/filter/sort combinations, first and second pages, 300 requests through the full FastAPI stack on the 10k seed: **p95 42 ms** (target < 500 ms). Slowest are the compensation sort (~42 ms median) and searches that scan without an index (~28 ms). At 1M (informational) index-backed requests stay under ~65 ms, but those two reach 2.7–3.6 s and 0.8–1.3 s — the scaling path is `employee_totals` and a `pg_trgm` search index (Scale Lab E4); see `docs/PERFORMANCE.md`.
 
 ## Phase 6 — Employee Profile, Create/Edit/Terminate (FR-2, FR-3) — Done
+
 - **`GET /employees/{id}?reporting_currency=`** — the profile:
   - the employee
   - the current breakdown per type: amount per period, annualized, annualized in the reporting currency, whether it counts toward CTC
@@ -175,6 +196,7 @@ Per `docs/SCALE_LAB.md` E1–E3, run at S (10k) and M (1M); full results in **`d
 - **Done when (verified):** `tests/integration/test_employee_lifecycle_api.py` (32 tests) — editing can't change compensation, creating can't skip base pay, and termination without a reachable date is rejected; plus profile totals, % change, and current-pointer behavior. The Phase 1.3 CRUD tests were updated to the new create contract. Checked live on a seeded employee's profile.
 
 ## Phase 7 — Compensation Change (FR-4) — Done
+
 - `POST /employees/{id}/compensation`: appends a record for one `compensation_type_id` with any change reason from the shared list (incl. "correction"), updates `CurrentCompensation` for that type if the new record's effective date is today-or-past and newer than the current pointer for that type.
 - Future-dated records: stored but don't move the current pointer until their date arrives — needs a resolution strategy (recompute-on-read for "is this now current" vs. a scheduled job); pick the simplest that matches §7's no-background-jobs-at-10k stance (recompute-on-read).
 - Validation: effective date ≥ hire date (§6); change reason must exist (enforced by the FK, but surface a clean 4xx before hitting the DB error).
@@ -186,7 +208,8 @@ Per `docs/SCALE_LAB.md` E1–E3, run at S (10k) and M (1M); full results in **`d
 - **Done when (verified):** `tests/integration/test_compensation_change_api.py` (23 tests): a future-dated raise leaves profile and directory totals unchanged the day before and moves them on its date (clock injected); several pending records promote the newest due one and leave later ones pending; promotion never displaces a newer current record; a back-dated correction is stored but not current; corrections drop out of `average_increase`; an unknown reason/type, pre-hire date, zero base pay, or post-termination date is a clear `422` that writes nothing. `alembic check` clean, `downgrade base`/`upgrade head` round-trips, `EXPLAIN` shows the partial index used. Checked live on the seeded 10k database.
 
 ## Phase 7A — Departments, Job Titles and Levels as reference data — Done
-Found during Phase 7: `employees.department`, `.job_title` and `.job_level` are free text. Nothing stops "Software Engineer", "software engineer" and "SW Engineer" from being three different roles, which is the exact problem REQUIREMENTS §1 lists ("inconsistent department or title names go uncaught"). It also splits every grouping that keys off them: grouped statistics, role-by-country, and the title + level + country peer groups behind outlier detection. Levels sort as text, so `L10` would land between `L1` and `L2`. Inserted as 7A, not renumbered, because later phase numbers are referenced throughout code and docs; it must land before Phase 9 (import validates against these lists) and Phase 12 (groups by them).
+
+Found during Phase 7: `employees.department`, `.job_title` and `.job_level` are free text. Nothing stops "Software Engineer", "software engineer" and "SW Engineer" from being three different roles, which is the exact problem SPECIFICATION §1 lists ("inconsistent department or title names go uncaught"). It also splits every grouping that keys off them: grouped statistics, role-by-country, and the title + level + country peer groups behind outlier detection. Levels sort as text, so `L10` would land between `L1` and `L2`. Inserted as 7A, not renumbered, because later phase numbers are referenced throughout code and docs; it must land before Phase 9 (import validates against these lists) and Phase 12 (groups by them).
 
 - **Tables** (migration `0011`), lookup data like `compensation_types` and `change_reasons`:
   - `departments (id, name CITEXT UNIQUE, created_at)`.
@@ -231,7 +254,9 @@ Found during Phase 7: `employees.department`, `.job_title` and `.job_level` are 
   - Levels sort by rank (`L2` before `L10`) in the directory and the level list.
 
 ## Phase 8 — Exchange Rates (FR-8) — Done
+
 **Partly done early** (pulled forward so 1.2 could load live rates instead of fixtures):
+
 - Provider: open.er-api.com (ExchangeRate-API's free, keyless `latest/USD` feed, updated once a day). URL comes from `EXCHANGE_RATE_API_URL`. It quotes every seeded currency except KPW; converting KPW returns a clear 503.
 - `app/services/exchange_rates.py`: fetch → parse → upsert one row per supported currency per `rate_date` (re-fetching the same day updates rather than duplicates); `latest_rates` reads the newest rate per currency (`DISTINCT ON`) with each rate's date. On provider failure: log a warning, keep serving stored rates.
 - **No provider call per page view.** Conversions and dashboards only read stored rates (§7 Resilience). The refresh itself is throttled: if the newest stored rate was fetched within `REFRESH_INTERVAL` (24 h, matching the provider's publish cadence), it's a no-op that returns `skipped: true` without touching the network — so it's safe to trigger on every dashboard load. `force` overrides.
@@ -239,12 +264,14 @@ Found during Phase 7: `employees.department`, `.job_title` and `.job_level` are 
 - Tests fake the provider with `httpx.MockTransport` and use far-future (2099) rate dates so they never depend on, or collide with, real stored rates; they cover failure fallback, same-day upsert, throttling (provider not called while fresh, called once stale, called when forced).
 
 **Remaining:**
+
 - Daily scheduling. Because refresh is throttled, the simplest option is to trigger it on app startup and/or from the dashboard's first load rather than a separate scheduler; a cron calling the CLI also works. Pick one and document it.
 - Every analytics/profile response that converts currency surfaces the rate date used (the convert endpoint already does).
 - Reporting-currency selector; conversion always routes through stored USD rates.
 - **Done when:** analytics still return correct numbers with the fetch disabled, using the previous day's stored rates — tested by simulating provider failure (already tested at the service level; still needed for the analytics endpoints).
 
 **As built (remaining items):**
+
 - **Daily scheduling — a worker, `app/jobs/daily.py`:** `python -m app.jobs.daily` runs once (cron: `10 0 * * *`, i.e. 00:10 UTC, shortly after the provider publishes); `--forever` is the long-running worker form (runs at start, then sleeps until the next 00:10 UTC). Each run:
   1. refreshes rates, then commits;
   2. runs Phase 7's `promote_due_records`, then commits — the same daily trigger the future-dated pay switch needs.
@@ -257,8 +284,8 @@ Found during Phase 7: `employees.department`, `.job_title` and `.job_level` are 
 - **Reporting currency:** `reporting_currency` on the directory and profile is validated against `currencies` — an unknown code is `422 unsupported currency: XYZ` (it used to return empty conversions silently). A supported currency with no stored rate (KPW) still returns `null` conversions rather than failing the page. Conversion always goes through stored USD rates (`app.domain.currency`). The UI's selector lists `GET /exchange-rates/latest`.
 - **Done when (verified):** `tests/integration/test_daily_job.py` (12 tests) — with the provider failing (fake transport returning 503), the job reports failure, the profile and directory still convert with the previous stored rates and show those rates' date, and due records are still promoted; a successful fetch is used by the next read; the job doesn't refetch within an hour but does refetch inside the API's 24 h window; worker wake-up times; reporting-currency validation. Also run live: the provider is unreachable from the build sandbox (403), and the job logged the failure, promoted, and exited 1. The analytics endpoints (Phase 12) must get the same provider-failure test when they're built.
 
-
 ## Phase 9 — CSV Import (FR-5) — Done
+
 - Template download endpoint. Columns: name, email, company, department, title, level, country, hire date, currency, base pay amount — the base-pay type only; other compensation types are added afterward through Phase 7, not at import.
 - `POST /import/validate`: full-file validation via Phase 2's rules, returns per-row errors; nothing persisted. Department, title and level must match Phase 7A's reference lists (case-insensitive); unknown values are row errors.
 - `POST /import/confirm`: re-validates and inserts all-or-nothing in one transaction, writing each employee's row plus one base-pay compensation record with reason "new hire" (reject silently-stale previews — re-validate against current DB state, e.g. emails created since the preview).
@@ -277,8 +304,8 @@ Found during Phase 7: `employees.department`, `.job_title` and `.job_level` are 
   - **Atomicity:** any failure after the first insert (simulated in a test) rolls the whole file back through `translate_db_errors`.
 - **Done when (verified):** `tests/integration/test_import_api.py` (19 tests) — a 50-row file with one bad row (row 38, unknown country) is a `422` reporting that row, column and reason with zero employees saved; validate saves nothing; every bad row in a file is reported; duplicates within the file and existing emails; case-insensitive names and headers; BOM and blank lines; the row cap; non-UTF-8 and oversized files; stale previews; rollback after a mid-insert failure; future hire dates. Timed live on a fresh database: a 10,000-row file validates in 1.1 s and confirms in 4.2 s; re-uploading it is rejected with 10,000 "already exists" errors.
 
-
 ## Phase 10 — CSV Export (FR-6) — Done
+
 - Exports the Phase 5 directory view's current filter/search/sort state, with local + reporting currency columns.
 - **Done when:** export output matches what the directory UI is showing when exported.
 - **As built:**
@@ -290,7 +317,9 @@ Found during Phase 7: `employees.department`, `.job_title` and `.job_level` are 
 - **Done when (verified):** the export tests in `tests/integration/test_directory_api.py` (13 new) page through the directory 2 rows at a time and compare it with the export for six views — every sort, ascending and descending, filters, search, three reporting currencies — same employees, same order, same totals in both currencies. Reversing the export's sort order fails all six. Also tested: columns and values (including a same-currency row with no rate date and a converted row with its rate date), terminated employees, formula neutralising, an empty view, and that invalid parameters are rejected exactly as by the directory. On the 10k seed a full export takes ~0.5 s.
 
 ## Phase 11 — Country and Currency Changes (FR-7) — Done
+
 Two distinct operations, both built here:
+
 - **Country change:** `POST /employees/{id}/relocate` — updates `employees.current_country` and, through Phase 7's compensation-change path, writes one new record for the base-pay type with reason "relocation" (same amount/currency unless currency is also changing). This is what gives a country-only move a dated, reasoned history entry even though nothing numeric changed.
 - **Currency change:** `POST /employees/{id}/change-currency` — a dedicated endpoint, *not* Phase 7's single-type path. Takes an HR-provided amount for every one of the employee's current compensation types and, in one transaction, updates `employees.currency` and writes a new record per type (each going through the normal Phase 7 validation, so `employees.currency` must be updated first within the transaction). No automatic conversion (see `docs/DATABASE_DESIGN.md`'s interpretive-calls section for why); the live exchange rate may be shown in the UI as a non-binding starting suggestion only.
 - Cross-currency increase/percentage-change display explicitly deferred (§4 FR-7, §10 roadmap item 2) — surface as "not comparable, currency changed" in the UI rather than computing a misleading number.
@@ -309,9 +338,10 @@ Two distinct operations, both built here:
 - **History:** unchanged from Phase 6 — a record whose currency differs from the previous one of its type shows `currency_changed: true` and `percent_change: null` (with the previous amount for reference). A country-only relocation shows `0.00`%.
 - **Done when (verified):** `tests/integration/test_relocation_api.py` (22 tests) — a country-only relocation adds one history entry at the same amount and leaves the total unchanged, with earlier records keeping their old country; a currency change rewrites all three current types and a SQL check finds no current row in a currency other than the employee's (also checked after every rejected or failed attempt); the rewritten history entries are flagged rather than given a percent; missing/extra/duplicate types, zero base pay, unknown or same currency, pending future changes, back-dated and future dates, terminated employees; a failure on the second of three records rolls back the currency and every record; the combined relocation + currency change. Removing the "every type" check fails three of these tests.
 
-
 ## Phase 12 — Pay Insights / Analytics (§5) — Done
+
 Each view: active employees only, current compensation, selected reporting currency, respects directory filters, shows rates-as-of date.
+
 - Summary cards + cost breakdown (overall/country/department).
 - Grouped statistics (avg/median/min/max by department, country, title, level) via SQL `percentile_cont`. Grouped by Phase 7A's ids, levels ordered by `rank`.
 - Role-by-country comparison.
@@ -332,9 +362,10 @@ Each view: active employees only, current compensation, selected reporting curre
   - Computed in SQL, not Python: window functions and `percentile_cont`; the change report reads the history once (each record gets the date it stopped applying via `lead()`), and returns the summary and the first page in one statement. Due future-dated records are promoted first, as on every read.
 - **Done when (verified):** `tests/integration/test_analytics_api.py` (20 tests) builds a 12-person population with known pay in three currencies and compares every view with the pure definitions in `app.domain.analytics` worked out independently in Python — totals, averages, medians, grouped stats, histogram bins, outliers and their order, composition — plus the active-only rule, filters, an employee with no rate, a provider outage (previous rates keep working and their date is shown), and the change report's average increase with each exclusion reason. Removing the active-only rule fails 11 of them; removing the 5-person minimum fails the outlier test. On the 10k seed every view answers in 0.1–0.45 s (summary 163 ms, stats ~100 ms, role-by-country 199 ms, histogram 143 ms, outliers 232 ms, composition 127 ms, a full year's change report 440 ms). Past the deployed size these aggregate over every active employee (Scale Lab E3/E5): the next step there is `employee_totals` or materialized views.
 
-
 ## Phase 13 — Frontend (React/Vite) — Done
+
 - Directory table with search/filter/sort/pagination (Phase 5).
+
 - **Compensation types screen** (backed by 1.3's catalog endpoints): table of every type — name, category, subtype, payment period — plus an **"Add compensation type"** form:
   - Name, category and subtype as free text, with category suggesting existing values (e.g. `bonus`, `reimbursement`) to keep grouping consistent in the Phase 12 composition breakdown.
   - Payment period as a picker (Monthly = 1, Quarterly = 3, Semi-annual = 6, Annual = 12) with a "custom months" escape hatch, stored as `period_months`.
@@ -365,8 +396,8 @@ Each view: active employees only, current compensation, selected reporting curre
 - **Found while testing in the browser:** `useAsync` flagged "loading" one render late, so stale rows briefly looked current — fixed at the source; filter checkboxes flickered because the router defers URL updates — they now update at once.
 - **Not covered:** no automated end-to-end suite is checked in (the browser runs used a throwaway Playwright script against a live backend); adding one to CI belongs with Phase 14.
 
-
 ## Phase 14 — Non-functional hardening ✅ Done
+
 - Re-run the 500 ms directory check (§1, §7) against the final schema/indexes with the full 10k seed and realistic filter combinations.
 - Confirm append-only is structurally impossible to violate (no UPDATE/DELETE grants or code paths on `compensation_records`).
 - Error handling and validation messages reviewed end-to-end (API error shapes → frontend display).
@@ -384,6 +415,7 @@ Each view: active employees only, current compensation, selected reporting curre
 - **Found while testing:** analytics excluded everyone when no exchange rates were stored (same-currency amounts now need no rate); a contradictory "no rates were needed… left out" note; tests that silently depended on dev data; an earlier test of mine that proved nothing on an empty table.
 
 ## Phase 15 — Deployment ✅ Built, awaiting first deploy
+
 - Hosted instance with managed Postgres, seeded on first run (per §9): `alembic upgrade head`, then the 1.2 seed commands (currencies/countries + first live rate fetch, companies, compensation catalog), then the Phase 3 seed. Both are idempotent.
 - README with live URL and demo video at the top (per AI_USAGE.md's deployment decision).
 - **As built:**
@@ -396,7 +428,9 @@ Each view: active employees only, current compensation, selected reporting curre
 - **Not done (needs the user's accounts):** the Docker image was not built here (no Docker daemon in this environment) and nothing is deployed, so the live URL and demo video in the README are placeholders. Remaining steps: create the Render blueprint from the repo, wait for the first start, open the URL, then fill the README.
 
 ## Phase 16 — Scale Lab, Phase 2 experiments ✅ Done
+
 Per `docs/SCALE_LAB.md` E4–E8 (trigram search, materialized analytics, large-import `COPY` staging, index write cost, partitioning) — informs the §8 1M-path roadmap but isn't required for the 10k submission.
+
 - **As built:** `backend/scale_lab/e4_search.py`, `e5_analytics.py`, `e6_import.py`, `e7_index_cost.py`, `e8_partitioning.py`, with tables added to `scale_lab/report.py` and raw results in `scale_lab/results/`. Each states its hypothesis first, runs on throwaway `acme_lab_*` databases and leaves the application untouched. Write-up: `docs/PERFORMANCE.md` ("Phase 2 experiments").
 - **Done when (verified):** each experiment ran at S (10,000) and M (1,000,000; E7 at 100,000 employees, three loads), with medians over 5 runs after a warm-up and the plan captured.
 - **Results in one line each:** E4 trigram indexes take rare searches from 2–4 s to under 12 ms at 1M; E5 a materialized view is 4.5–11× faster but costs a 5.4 s refresh whatever changed; E6 staging import scales linearly with flat memory (1M rows in 155 s) but is only 1.8–2.5× faster; E7 all 11 indexes cost +3.7% load time and zero indexes load 4.4× slower; E8 partitioning speeds date reports 2.2–3.7× but slows employee lookups and breaks `id` uniqueness, so it is not recommended.
@@ -406,6 +440,7 @@ Per `docs/SCALE_LAB.md` E4–E8 (trigram search, materialized analytics, large-i
 ---
 
 ## Cross-cutting, continuous
+
 - **Testing split (§7):** unit tests on Phase 2's pure functions (`tests/unit/`, fast, no infra); integration tests for API/DB behavior against the docker-compose Postgres (`tests/integration/`). The integration fixture runs `alembic upgrade head` once per session and wraps every test in a rolled-back transaction, so the dev DB is never polluted. Tests never call the live exchange-rate provider. Since Phase 14 they run against a dedicated `<db>_test` database.
 - **AI_USAGE.md:** log Phase 3 entries as they happen (per the file's existing template) — what was generated, what was changed, what bugs were caught by tests.
 - **Sequencing risk:** Phases 5 and 12 both depend on Phase 4's conclusions about the current-compensation strategy — don't hand-build either against an unvalidated assumption.

@@ -7,7 +7,7 @@
    TEST_DATABASE_URL to use a specific database instead; pointing it at the app's own
    database is allowed but has to be explicit.
 2. **No network.** Tests use fixed exchange rates and a faked provider, never the live one
-   (REQUIREMENTS §7). Any attempt to leave the machine fails the test.
+   (SPECIFICATION §7). Any attempt to leave the machine fails the test.
 """
 
 import os
