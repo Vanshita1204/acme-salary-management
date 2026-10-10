@@ -10,7 +10,7 @@ HR tool to find any employee, see their full compensation history, record change
 |---|---|
 | `backend/` | FastAPI + SQLAlchemy + PostgreSQL. Compensation history is append-only, enforced by the database. |
 | `frontend/` | React + TypeScript + Vite. See `frontend/README.md`. |
-| `docs/` | `REQUIREMENTS.md` (one page), `SPECIFICATION.md`, `DATABASE_DESIGN.md`, `IMPLEMENTATION_PLAN.md`, `PERFORMANCE.md`, `SCALE_LAB.md`, `AI_USAGE.md` |
+| `docs/` | `REQUIREMENTS.md` (one page), `SPECIFICATION.md`, `DATABASE_DESIGN.md` (with `database-design.mmd` and `database-er-diagram.png`), `IMPLEMENTATION_PLAN.md`, `PERFORMANCE.md`, `SCALE_LAB.md`, `AI_USAGE.md` |
 | `Dockerfile`, `render.yaml`, `deploy/` | The hosted instance (below) |
 
 ## Run it locally

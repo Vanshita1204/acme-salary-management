@@ -1,0 +1,107 @@
+erDiagram
+    CURRENCIES {
+        char3 code PK
+        text name
+    }
+    COUNTRIES {
+        char2 code PK
+        text name
+        char3 default_currency FK
+    }
+    COMPANIES {
+        bigint id PK
+        text name UK
+    }
+    EMPLOYEES {
+        bigint id PK
+        varchar code UK
+        bigint company_id FK
+        text first_name
+        text last_name
+        citext email UK
+        bigint department_id FK
+        bigint job_title_id FK
+        bigint job_level_id FK
+        char2 current_country FK
+        char3 currency FK
+        text status
+        date hire_date
+        date termination_date
+        timestamptz created_at
+        timestamptz updated_at
+    }
+    DEPARTMENTS {
+        bigint id PK
+        citext name UK
+    }
+    JOB_TITLES {
+        bigint id PK
+        citext name UK
+    }
+    JOB_LEVELS {
+        bigint id PK
+        citext code UK
+        text label
+        integer rank UK
+    }
+    COMPENSATION_TYPES {
+        bigint id PK
+        text category
+        text subtype
+        integer period_months
+        boolean is_base_pay
+        boolean counts_toward_total
+        text name
+        timestamptz created_at
+    }
+    CHANGE_REASONS {
+        bigint id PK
+        text code UK
+        text label
+    }
+    COMPENSATION_RECORDS {
+        bigint id PK
+        bigint employee_id FK
+        bigint compensation_type_id FK
+        date effective_date
+        char2 country FK
+        char3 currency FK
+        numeric amount
+        bigint change_reason_id FK
+        text note
+        text changed_by
+        timestamptz created_at
+    }
+    CURRENT_COMPENSATION {
+        bigint employee_id PK,FK
+        bigint compensation_type_id PK,FK
+        bigint compensation_record_id FK,UK
+        date effective_date
+        numeric amount
+        timestamptz updated_at
+    }
+    EXCHANGE_RATES {
+        bigint id PK
+        char3 currency FK
+        numeric rate_to_usd
+        date rate_date
+        text source
+        timestamptz fetched_at
+    }
+
+    CURRENCIES ||--o{ COUNTRIES : "default currency"
+    CURRENCIES ||--o{ COMPENSATION_RECORDS : "currency"
+    CURRENCIES ||--o{ EXCHANGE_RATES : "currency"
+    COUNTRIES ||--o{ EMPLOYEES : "current country"
+    COUNTRIES ||--o{ COMPENSATION_RECORDS : "country"
+    CURRENCIES ||--o{ EMPLOYEES : "current currency"
+    COMPANIES ||--o{ EMPLOYEES : "employs"
+    DEPARTMENTS ||--o{ EMPLOYEES : "department"
+    JOB_TITLES ||--o{ EMPLOYEES : "title"
+    JOB_LEVELS ||--o{ EMPLOYEES : "level"
+    COMPENSATION_TYPES ||--o{ COMPENSATION_RECORDS : "typed as"
+    COMPENSATION_TYPES ||--o{ CURRENT_COMPENSATION : "typed as"
+    CHANGE_REASONS ||--o{ COMPENSATION_RECORDS : "reason"
+    EMPLOYEES ||--o{ COMPENSATION_RECORDS : "history"
+    EMPLOYEES ||--o{ CURRENT_COMPENSATION : "current (one row per type)"
+    COMPENSATION_RECORDS ||--o| CURRENT_COMPENSATION : "pointed to by"

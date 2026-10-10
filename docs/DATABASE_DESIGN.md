@@ -69,6 +69,7 @@ erDiagram
         text subtype
         integer period_months
         boolean is_base_pay
+        boolean counts_toward_total
         text name
         timestamptz created_at
     }
@@ -122,8 +123,10 @@ erDiagram
     CHANGE_REASONS ||--o{ COMPENSATION_RECORDS : "reason"
     EMPLOYEES ||--o{ COMPENSATION_RECORDS : "history"
     EMPLOYEES ||--o{ CURRENT_COMPENSATION : "current (one row per type)"
-    COMPENSATION_RECORDS ||--|| CURRENT_COMPENSATION : "pointed to by"
+    COMPENSATION_RECORDS ||--o| CURRENT_COMPENSATION : "pointed to by"
 ```
+
+The same diagram is in [`database-design.mmd`](database-design.mmd), and rendered as an image: ![ER diagram](database-er-diagram.png)
 
 `employees.current_country` and every `compensation_records.country` reference `countries`; every currency column references `currencies`, including the new `employees.currency` — the employee's **authoritative current pay currency**, decoupled from country (an employee can be based in one country and paid in another's currency). `employees.company_id` references `companies` — that's just which ACME entity an employee belongs to; `compensation_types` is not scoped by company at all, it's one universal catalog every employee at every company draws from.
 
