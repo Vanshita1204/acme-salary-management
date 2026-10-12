@@ -9,7 +9,7 @@ const person = (id: number, last: string) => ({
   job_title: "Software Engineer", job_level: "L3", current_country: "IN", status: "active", hire_date: "2024-01-15",
   currency: "INR", total_compensation: "2400000.00", total_compensation_reporting: "28800.00",
 });
-const page = (items: unknown[], extra = {}) => ({ body: { items, next_cursor: null, prev_cursor: null, reporting_currency: "USD", rates_as_of: { INR: "2026-10-05", USD: "2026-10-05" }, ...extra } });
+const page = (items: unknown[], extra = {}) => ({ body: { items, total: items.length, start: items.length ? 1 : 0, next_cursor: null, prev_cursor: null, reporting_currency: "USD", rates_as_of: { INR: "2026-10-05", USD: "2026-10-05" }, ...extra } });
 
 describe("directory", () => {
   it("shows pay in local and reporting currency, with the date of the rates", async () => {
@@ -43,15 +43,23 @@ describe("directory", () => {
 
   it("pages with the server's cursors", async () => {
     const api = mockApi({
-      "GET /employees": ({ query }) => (query.get("cursor") === "NEXT" ? page([person(2, "Second")], { prev_cursor: "PREV" }) : page([person(1, "First")], { next_cursor: "NEXT" })),
+      "GET /employees": ({ query }) => (query.get("cursor") === "NEXT" ? page([person(2, "Second")], { prev_cursor: "PREV", total: 2, start: 2 }) : page([person(1, "First")], { next_cursor: "NEXT", total: 2 })),
     });
     renderApp(<DirectoryPage />);
     await screen.findByRole("link", { name: "Ada First" });
+    expect(screen.getByText("Showing 1 of 2 employees")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Previous/ })).toBeDisabled();
     await userEvent.click(screen.getByRole("button", { name: /Next/ }));
     expect(await screen.findByRole("link", { name: "Ada Second" })).toBeInTheDocument();
     expect(api.sent("GET", "/employees").at(-1)!.query.get("cursor")).toBe("NEXT");
+    expect(screen.getByText("Showing 2 of 2 employees")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Next/ })).toBeDisabled();
+  });
+
+  it("shows the range this page covers out of the total", async () => {
+    mockApi({ "GET /employees": page([person(51, "Fifty-first"), person(52, "Fifty-second")], { total: 10000, start: 51, prev_cursor: "PREV", next_cursor: "NEXT" }) });
+    renderApp(<DirectoryPage />);
+    expect(await screen.findByText("Showing 51–52 of 10,000 employees")).toBeInTheDocument();
   });
 
   it("says so when nothing matches, and when the server can't be reached", async () => {

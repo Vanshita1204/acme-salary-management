@@ -326,6 +326,49 @@ def test_paging_forward_then_back_visits_every_row_once(client, world, sort, ord
     assert page["prev_cursor"] is None and page["next_cursor"]
 
 
+def test_total_counts_every_match_whatever_the_page(client, world):
+    everyone = directory(client, world)
+    assert everyone["total"] == len(everyone["items"]) == 5
+
+    first = directory(client, world, limit=2)
+    second = directory(client, world, limit=2, cursor=first["next_cursor"])
+    assert len(first["items"]) == 2
+    assert first["total"] == second["total"] == 5
+
+    assert directory(client, world, country="GB")["total"] == 2
+    assert directory(client, world, status="active")["total"] == 4
+    assert directory(client, world, q="zzz-no-match")["total"] == 0
+
+
+@pytest.mark.parametrize("sort", ["name", "hire_date", "level", "compensation"])
+@pytest.mark.parametrize("order", ["asc", "desc"])
+def test_start_is_the_position_of_the_first_row_going_forward_and_back(
+    client, world, sort, order
+):
+    page = directory(client, world, sort=sort, order=order, limit=2)
+    starts = [page["start"]]
+    while page["next_cursor"]:
+        page = directory(
+            client, world, sort=sort, order=order, limit=2,
+            cursor=page["next_cursor"],
+        )  # fmt: skip
+        starts.append(page["start"])
+    assert starts == [1, 3, 5]
+
+    back = []
+    while page["prev_cursor"]:
+        page = directory(
+            client, world, sort=sort, order=order, limit=2,
+            cursor=page["prev_cursor"],
+        )  # fmt: skip
+        back.append(page["start"])
+    assert back == [3, 1]
+
+
+def test_start_is_zero_for_an_empty_view(client, world):
+    assert directory(client, world, q="zzz-no-match")["start"] == 0
+
+
 def test_cursor_from_another_sort_is_rejected(client, world):
     page = directory(client, world, limit=2)
     response = client.get(

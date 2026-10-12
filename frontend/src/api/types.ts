@@ -62,6 +62,8 @@ export interface DirectoryItem {
 
 export interface DirectoryPage {
   items: DirectoryItem[];
+  total: number;
+  start: number;
   next_cursor: string | null;
   prev_cursor: string | null;
   reporting_currency: string;

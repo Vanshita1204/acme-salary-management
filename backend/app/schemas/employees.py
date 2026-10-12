@@ -158,6 +158,8 @@ class DirectoryItem(BaseModel):
 
 class DirectoryPageOut(BaseModel):
     items: list[DirectoryItem]
+    total: int
+    start: int
     next_cursor: str | None
     prev_cursor: str | None
     reporting_currency: str

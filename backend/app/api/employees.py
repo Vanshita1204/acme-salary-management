@@ -128,6 +128,8 @@ def list_directory(
             )
             for row in page.rows
         ],
+        total=page.total,
+        start=page.start,
         next_cursor=page.next_cursor,
         prev_cursor=page.prev_cursor,
         reporting_currency=page.reporting_currency,

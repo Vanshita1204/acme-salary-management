@@ -13,6 +13,13 @@ const PAGE_SIZE = 50;
 
 const STATUS_TONE = { active: "good", on_leave: "warning", terminated: "neutral" } as const;
 
+/** "51–100", or just "1" for a single row. */
+function rangeLabel(page: { start: number; items: unknown[] }): string {
+  const fmt = (n: number) => n.toLocaleString("en-US");
+  const end = page.start + page.items.length - 1;
+  return page.items.length <= 1 ? fmt(page.start) : `${fmt(page.start)}–${fmt(end)}`;
+}
+
 export default function DirectoryPage() {
   const [search, setSearch] = useSearchParams();
   const { currency } = useReporting();
@@ -95,8 +102,8 @@ export default function DirectoryPage() {
                   ← Previous
                 </button>
                 <span className="muted">
-                  Showing {page.items.length} {page.items.length === 1 ? "employee" : "employees"}
-                  {page.next_cursor ? " (more on the next page)" : ""}
+                  Showing {rangeLabel(page)} of {page.total.toLocaleString("en-US")}{" "}
+                  {page.total === 1 ? "employee" : "employees"}
                 </span>
                 <button type="button" disabled={!page.next_cursor} onClick={() => setSearch(viewToSearch(view, page.next_cursor))}>
                   Next →

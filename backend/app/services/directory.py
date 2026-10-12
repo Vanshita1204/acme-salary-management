@@ -73,6 +73,10 @@ class DirectoryRow:
 @dataclass(frozen=True)
 class DirectoryPage:
     rows: list[DirectoryRow]
+    total: int  # employees matching the filters, across all pages
+    start: (
+        int  # 1-based position of the first row on this page (0 if the page is empty)
+    )
     next_cursor: str | None
     prev_cursor: str | None
     reporting_currency: str
@@ -138,6 +142,28 @@ def apply_filters(stmt: Select, query: DirectoryQuery) -> Select:
             levels = levels.where(JobLevel.rank <= query.max_level_rank)
         stmt = stmt.where(Employee.job_level_id.in_(levels))
     return stmt
+
+
+def count_matching(session: Session, query: DirectoryQuery) -> int:
+    """How many employees match the search and filters, whatever page is shown."""
+    matching = apply_filters(select(Employee.id), query).subquery()
+    return session.scalar(select(func.count()).select_from(matching)) or 0
+
+
+def count_before(
+    session: Session, query: DirectoryQuery, base: Select, keys: list, first_key: tuple
+) -> int:
+    """Matching employees that sort before `first_key`, in the order the page is read.
+    `base` is the filtered statement from `sort_key`, so joined sort keys resolve."""
+    before = (
+        tuple_(*keys) < tuple_(*first_key)
+        if query.order == "asc"
+        else tuple_(*keys) > tuple_(*first_key)
+    )
+    return (
+        session.scalar(select(func.count()).select_from(base.where(before).subquery()))
+        or 0
+    )
 
 
 def sort_key(query: DirectoryQuery) -> tuple[Select, list[ColumnElement], list]:
@@ -222,6 +248,7 @@ def list_employees(session: Session, query: DirectoryQuery) -> DirectoryPage:
     promote_due_records(session)  # future-dated records whose date has arrived
     stmt, keys, parsers = sort_key(query)
     stmt = apply_filters(stmt, query)
+    filtered = stmt  # before the cursor and limit; start-of-page counting reuses it
     if cursor:
         try:
             values = [parse(v) for parse, v in zip(parsers, cursor.key, strict=True)]
@@ -265,11 +292,25 @@ def list_employees(session: Session, query: DirectoryQuery) -> DirectoryPage:
             boundary_cursor(fetched[0], "before") if fetched and cursor else None
         )
 
+    start = (
+        count_before(
+            session,
+            query,
+            filtered,
+            keys,
+            tuple(fetched[0][i + 1] for i in range(len(keys))),
+        )
+        + 1
+        if cursor and fetched
+        else min(1, len(fetched))
+    )
     employees = [row[0] for row in fetched]
     rates, rate_dates = latest_rates(session)
     used = {e.currency for e in employees} | {reporting}
     return DirectoryPage(
         rows=with_totals(session, employees, reporting, rates),
+        total=count_matching(session, query),
+        start=start,
         next_cursor=next_cursor,
         prev_cursor=prev_cursor,
         reporting_currency=reporting,

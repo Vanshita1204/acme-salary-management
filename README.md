@@ -2,12 +2,12 @@
 
 HR tool to find any employee, see their full compensation history, record changes without ever overwriting the past, and answer pay questions across countries and currencies.
 
-> **Live app:** _add the URL after the first deploy_ · **Demo video:** _add the link_
+> **Live app:**  <https://acme-salary-management-6yp7.onrender.com/> · **Demo video:** _add the link_
 
 ## What's here
 
 | | |
-|---|---|
+| --- | --- |
 | `backend/` | FastAPI + SQLAlchemy + PostgreSQL. Compensation history is append-only, enforced by the database. |
 | `frontend/` | React + TypeScript + Vite. See `frontend/README.md`. |
 | `docs/` | `REQUIREMENTS.md` (one page), `SPECIFICATION.md`, `DATABASE_DESIGN.md` (with `database-design.mmd` and `database-er-diagram.png`), `IMPLEMENTATION_PLAN.md`, `PERFORMANCE.md`, `SCALE_LAB.md`, `AI_USAGE.md` |
@@ -30,7 +30,7 @@ Tests: `cd backend && pytest` (uses its own `<db>_test` database and never touch
 ### Test results
 
 | Suite | Tests | Result | Time | Coverage |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | Backend (pytest) | 539 | all passed | ~25–38 s | 93% of `app/` (`pytest --cov=app`) |
 | Frontend (vitest) | 81 (10 files) | all passed | ~3 s | not measured |
 
