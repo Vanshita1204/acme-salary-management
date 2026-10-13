@@ -12,6 +12,12 @@ class RowErrorOut(BaseModel):
     reason: str
 
 
+class PayAmountOut(BaseModel):
+    type_id: int
+    name: str
+    amount: Decimal
+
+
 class ImportRowOut(BaseModel):
     row: int
     first_name: str
@@ -24,7 +30,7 @@ class ImportRowOut(BaseModel):
     country: str
     hire_date: date
     currency: str
-    base_pay_amount: Decimal
+    pay: list[PayAmountOut]  # base pay first, then each other component given
 
 
 class ValidationReport(BaseModel):

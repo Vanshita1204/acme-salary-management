@@ -332,7 +332,7 @@ def test_the_whole_application_works_as_the_app_role(db, client, org, app_role):
             "country",
             "hire_date",
             "currency",
-            "base_pay_amount",
+            "Base Pay",
         ]
     )
     writer.writerow(

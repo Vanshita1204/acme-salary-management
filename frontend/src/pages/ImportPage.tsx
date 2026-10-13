@@ -98,11 +98,15 @@ export default function ImportPage() {
         <section className="card">
           <h2>Choose a CSV file</h2>
           <p>
-            Start from the template: one row per employee with their starting base pay. Other pay components (bonus, allowances, equity…) are added afterwards on each person's page.{" "}
+            <strong>1. Enter the reference data first.</strong> Companies, departments, job titles, levels and compensation types must already exist under{" "}
+            <Link to="/reference">Reference data</Link>. An import never creates them, and a column that isn't a known compensation type is rejected.
+          </p>
+          <p>
+            <strong>2. Download the template.</strong> It has the employee fields, then one column per compensation type, so it always matches your current catalog.{" "}
             <a href={`${API_URL}/import/template`} download>Download the template</a>.
           </p>
           <p className="muted">
-            Department, job title and level must match the lists under Reference data (capital letters don't matter). Up to 10,000 rows per file.
+            The Base Pay column is required. Leave any other pay column blank for people who don't have it. Amounts are per payment period (monthly for allowances, annual for yearly bonuses), in the employee's currency. Names must match the lists (capital letters don't matter). Up to 10,000 rows per file.
           </p>
           <div className="dropzone">
             <Field label="CSV file" error={fieldError}>
@@ -165,7 +169,7 @@ export default function ImportPage() {
                     <tr>
                       <th scope="col" className="num">Row</th><th scope="col">Name</th><th scope="col">Email</th><th scope="col">Company</th>
                       <th scope="col">Department</th><th scope="col">Title</th><th scope="col">Level</th><th scope="col">Country</th>
-                      <th scope="col">Hire date</th><th scope="col" className="num">Base pay (monthly)</th>
+                      <th scope="col">Hire date</th><th scope="col" className="num">Base pay (monthly)</th><th scope="col">Other pay</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -180,7 +184,12 @@ export default function ImportPage() {
                           <td>{lookup.level(row.job_level_id)}</td>
                           <td>{row.country}</td>
                           <td>{formatDate(row.hire_date)}</td>
-                          <td className="num">{formatMoney(row.base_pay_amount, row.currency)}</td>
+                          <td className="num">{formatMoney(row.pay[0]?.amount, row.currency)}</td>
+                          <td>
+                            {row.pay.length > 1
+                              ? row.pay.slice(1).map((p) => `${p.name}: ${formatMoney(p.amount, row.currency)}`).join("; ")
+                              : "—"}
+                          </td>
                         </tr>
                     ))}
                   </tbody>
@@ -210,7 +219,7 @@ export default function ImportPage() {
       {step === "done" && created && (
         <section className="card">
           <Alert kind="success" title={`${formatInteger(created.created)} employees imported`}>
-            Each has an active record with starting base pay dated on their hire date.
+            Each has active records for the pay components in the file, dated on their hire date.
           </Alert>
           <div className="actions">
             <Link className="button primary" to="/">View employees</Link>

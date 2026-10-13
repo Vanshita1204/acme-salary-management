@@ -45,7 +45,7 @@ COLUMNS = [
     "country",
     "hire_date",
     "currency",
-    "base_pay_amount",
+    "Base Pay",  # the base-pay type's column; the staging COPY below goes by position
 ]
 COPY = (
     "COPY import_staging (first_name, last_name, email, company, department, job_title, "

@@ -17,6 +17,7 @@ from app.schemas.catalog import NonEmpty
 from app.schemas.imports import (
     ImportConfirmed,
     ImportRowOut,
+    PayAmountOut,
     RowErrorOut,
     ValidationReport,
 )
@@ -41,16 +42,20 @@ def report(result: ImportResult) -> ValidationReport:
         ok=result.ok,
         row_count=len(result.rows),
         errors=[RowErrorOut(**vars(e)) for e in result.errors],
-        preview=[ImportRowOut(**vars(r)) for r in result.rows[:PREVIEW_LIMIT]],
+        preview=[
+            ImportRowOut(**{**vars(r), "pay": [PayAmountOut(**vars(p)) for p in r.pay]})
+            for r in result.rows[:PREVIEW_LIMIT]
+        ],
     )
 
 
 @router.get("/template")
-def download_template() -> Response:
-    """The CSV header HR fills in, one row per employee (base pay only; other
-    compensation types are added afterwards as compensation changes)."""
+def download_template(db: DbSession) -> Response:
+    """The CSV header HR fills in, one row per employee: the employee fields, then
+    one column per compensation type in the catalog. Reference data (companies,
+    departments, titles, levels, compensation types) must exist before import."""
     return Response(
-        content=import_service.template_csv(),
+        content=import_service.template_csv(db),
         media_type="text/csv",
         headers={"Content-Disposition": f'attachment; filename="{TEMPLATE_FILENAME}"'},
     )
@@ -72,7 +77,7 @@ def confirm_import(
     file: Upload, changed_by: Annotated[NonEmpty, Form()], db: DbSession
 ) -> ImportConfirmed | JSONResponse:
     """Re-validate and save every row, or nothing. Each employee gets a "new hire"
-    base-pay record effective on their hire date. A file with any error is a 422
+    record per pay component given, effective on their hire date. A file with any error is a 422
     with the same report as /validate."""
     with translate_db_errors(db):
         result, employee_ids = import_service.confirm_file(

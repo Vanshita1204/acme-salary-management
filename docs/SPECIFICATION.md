@@ -73,10 +73,11 @@ Derived values (never stored): a compensation type's annualized amount = amount 
 
 ### FR-5 CSV Import
 
-- Downloadable template with one row per employee: first name, last name, email, company, department, title, level, country, hire date, currency, base pay amount. Only the base-pay compensation type is set at import; other types (bonus, allowances, equity, etc.) are added afterward through FR-4.
+- **Dynamic template**, one row per employee: first name, last name, email, company, department, title, level, country, hire date, currency, then **one column per compensation type** in the catalog, named after the type (base pay first). The template is generated from the catalog at download time. Amounts are per the type's payment period, in the employee's currency. The base-pay column is required; any other column may be left out or blank for an employee who has no such component. Each value becomes a "new hire" record effective on the hire date.
 - Two steps: **validate and preview**, then **confirm**. The whole file is validated first; row-level errors are shown with row number, column, and reason.
 - **All-or-nothing:** if any row is invalid, nothing is saved. HR fixes the file and re-uploads. This avoids a half-imported state that is hard to reconcile.
-- Rejected when: a required field is missing; the email is malformed, already exists, or is duplicated within the file; the company or currency is unrecognized; an amount is negative or the base pay amount is zero; a date is invalid.
+- Rejected when: a required field is missing; the email is malformed, already exists, or is duplicated within the file; the company or currency is unrecognized; a pay amount is negative, or the base pay amount is zero; a date is invalid; a column is neither an employee field nor a known compensation type.
+- **Reference data comes first.** The import never creates companies, departments, titles, levels or compensation types; it rejects unknown values, and an unknown column. Add them under Reference data, then download a fresh template.
 - Maximum 10,000 rows per file.
 
 ### FR-6 CSV Export

@@ -15,15 +15,17 @@ from sqlalchemy import func, insert, select
 from sqlalchemy.orm import Session
 
 from app.domain.csv_import import (
-    TEMPLATE_COLUMNS,
+    EMPLOYEE_COLUMNS,
     ImportContext,
     ImportResult,
     ImportRow,
+    PayType,
     validate_import,
 )
 from app.models import (
     Company,
     CompensationRecord,
+    CompensationType,
     Country,
     Currency,
     CurrentCompensation,
@@ -33,7 +35,7 @@ from app.models import (
     JobTitle,
 )
 from app.services.compensation import reason_id, utc_today
-from app.services.employees import NEW_HIRE, base_pay_type_id
+from app.services.employees import NEW_HIRE
 from app.services.errors import Problem, ServiceError
 
 # 10,000 rows of the template run to ~2 MB; this leaves room for long names.
@@ -50,9 +52,27 @@ class ParsedFile:
     records: list[dict[str, str]]
 
 
-def template_csv() -> str:
-    """The header row HR fills in: one row per employee, base pay only."""
-    return ",".join(TEMPLATE_COLUMNS) + "\r\n"
+def pay_types(session: Session) -> list[PayType]:
+    """Every compensation type, base pay first, then by category and name."""
+    rows = session.execute(
+        select(
+            CompensationType.id, CompensationType.name, CompensationType.is_base_pay
+        ).order_by(
+            CompensationType.is_base_pay.desc(),
+            CompensationType.category,
+            CompensationType.name,
+        )
+    )
+    return [PayType(id=r.id, name=r.name, is_base_pay=r.is_base_pay) for r in rows]
+
+
+def template_csv(session: Session) -> str:
+    """The header row HR fills in: the employee fields, then one column per
+    compensation type in the catalog (base pay first). It reflects the catalog at
+    download time, so new types must be added under Reference data first."""
+    out = io.StringIO()
+    csv.writer(out).writerow([*EMPLOYEE_COLUMNS, *(p.name for p in pay_types(session))])
+    return out.getvalue()
 
 
 def parse_csv(content: bytes) -> ParsedFile:
@@ -103,6 +123,7 @@ def load_context(session: Session, records: list[dict[str, str]]) -> ImportConte
         departments=dict(session.execute(select(Department.name, Department.id)).all()),
         job_titles=dict(session.execute(select(JobTitle.name, JobTitle.id)).all()),
         job_levels=dict(session.execute(select(JobLevel.code, JobLevel.id)).all()),
+        pay_types=pay_types(session),
     )
 
 
@@ -116,8 +137,9 @@ def validate_file(session: Session, content: bytes) -> ImportResult:
 def insert_rows(
     session: Session, rows: list[ImportRow], changed_by: str, today: date | None = None
 ) -> list[int]:
-    """Insert validated rows: employees, their "new hire" base-pay records, and the
-    current-compensation pointers. Set-based, so 10,000 rows is three statements.
+    """Insert validated rows: employees, their "new hire" records (base pay and any
+    other pay components in the file), and the current-compensation pointers.
+    Set-based, so 10,000 rows is three statements.
 
     A hire date in the future gives a future-dated record, which becomes current on
     that date like any other (Phase 7)."""
@@ -145,8 +167,14 @@ def insert_rows(
             ],
         )
     )
-    base_pay, new_hire = base_pay_type_id(session), reason_id(session, NEW_HIRE)
-    # The DB triggers still check every record (hire date, currency, base pay > 0).
+    new_hire = reason_id(session, NEW_HIRE)
+    # One record per (employee, pay component). The DB triggers still check every
+    # record (hire date, currency, base pay > 0).
+    pairs = [
+        (employee_id, row, pay)
+        for employee_id, row in zip(employee_ids, rows, strict=True)
+        for pay in row.pay
+    ]
     record_ids = list(
         session.scalars(
             insert(CompensationRecord).returning(
@@ -155,29 +183,27 @@ def insert_rows(
             [
                 {
                     "employee_id": employee_id,
-                    "compensation_type_id": base_pay,
+                    "compensation_type_id": pay.type_id,
                     "change_reason_id": new_hire,
                     "effective_date": row.hire_date,
-                    "amount": row.base_pay_amount,
+                    "amount": pay.amount,
                     "country": row.country,
                     "currency": row.currency,
                     "changed_by": changed_by,
                 }
-                for employee_id, row in zip(employee_ids, rows, strict=True)
+                for employee_id, row, pay in pairs
             ],
         )
     )
     current = [
         {
             "employee_id": employee_id,
-            "compensation_type_id": base_pay,
+            "compensation_type_id": pay.type_id,
             "compensation_record_id": record_id,
             "effective_date": row.hire_date,
-            "amount": row.base_pay_amount,
+            "amount": pay.amount,
         }
-        for employee_id, record_id, row in zip(
-            employee_ids, record_ids, rows, strict=True
-        )
+        for (employee_id, row, pay), record_id in zip(pairs, record_ids, strict=True)
         if row.hire_date <= today
     ]
     if current:

@@ -286,7 +286,7 @@ Found during Phase 7: `employees.department`, `.job_title` and `.job_level` are 
 
 ## Phase 9 — CSV Import (FR-5) — Done
 
-- Template download endpoint. Columns: name, email, company, department, title, level, country, hire date, currency, base pay amount — the base-pay type only; other compensation types are added afterward through Phase 7, not at import.
+- Template download endpoint. Columns: the employee fields (first name, last name, email, company, department, title, level, country, hire date, currency), then one column per compensation type in the catalog, named after the type, base pay first. Generated from the catalog at download time. The base-pay column is required; the others may be blank. A column that is not an employee field or a known type is rejected, so reference data has to be entered first. (Revised after the first build: the original template carried only a base pay amount.)
 - `POST /import/validate`: full-file validation via Phase 2's rules, returns per-row errors; nothing persisted. Department, title and level must match Phase 7A's reference lists (case-insensitive); unknown values are row errors.
 - `POST /import/confirm`: re-validates and inserts all-or-nothing in one transaction, writing each employee's row plus one base-pay compensation record with reason "new hire" (reject silently-stale previews — re-validate against current DB state, e.g. emails created since the preview).
 - 10,000-row cap enforced before validation runs.

@@ -5,13 +5,13 @@ import { mockApi, renderApp } from "../test/utils";
 import ImportPage from "./ImportPage";
 
 const file = () => new File(["first_name\nAda"], "people.csv", { type: "text/csv" });
-const previewRow = { row: 2, first_name: "Ada", last_name: "Lovelace", email: "ada@example.com", company_id: 1, department_id: 1, job_title_id: 1, job_level_id: 3, country: "IN", hire_date: "2024-01-15", currency: "INR", base_pay_amount: "150000.00" };
+const previewRow = { row: 2, first_name: "Ada", last_name: "Lovelace", email: "ada@example.com", company_id: 1, department_id: 1, job_title_id: 1, job_level_id: 3, country: "IN", hire_date: "2024-01-15", currency: "INR", pay: [{ type_id: 1, name: "Base Pay", amount: "150000.00" }, { type_id: 7, name: "Housing Allowance", amount: "20000.00" }] };
 
 describe("import wizard", () => {
   it("lists each problem with its row and column and offers no way to import", async () => {
     mockApi({ "POST /import/validate": { body: { ok: false, row_count: 1, errors: [
       { row: 3, column: "job_title", reason: "unknown job title" },
-      { row: 5, column: "base_pay_amount", reason: "base pay amount must be greater than zero" },
+      { row: 5, column: "Base Pay", reason: "base pay amount must be greater than zero" },
     ], preview: [previewRow] } } });
     renderApp(<ImportPage />);
     await userEvent.upload(await screen.findByLabelText("CSV file"), file());
@@ -21,6 +21,23 @@ describe("import wizard", () => {
     expect(screen.getByRole("cell", { name: "unknown job title" })).toBeInTheDocument();
     expect(screen.getByRole("cell", { name: "job_title" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /^Import/ })).not.toBeInTheDocument();
+  });
+
+  it("tells people to enter reference data first and links the dynamic template", async () => {
+    mockApi();
+    renderApp(<ImportPage />);
+    expect(await screen.findByText(/Enter the reference data first/)).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Reference data" })).toHaveAttribute("href", "/reference");
+    expect(screen.getByRole("link", { name: "Download the template" })).toHaveAttribute("href", expect.stringContaining("/import/template"));
+  });
+
+  it("previews base pay and every other pay component", async () => {
+    mockApi({ "POST /import/validate": { body: { ok: true, row_count: 1, errors: [], preview: [previewRow] } } });
+    renderApp(<ImportPage />);
+    await userEvent.upload(await screen.findByLabelText("CSV file"), file());
+    await userEvent.click(screen.getByRole("button", { name: "Check file" }));
+
+    expect(await screen.findByText(/Housing Allowance: /)).toBeInTheDocument();
   });
 
   it("needs a file before it checks anything", async () => {

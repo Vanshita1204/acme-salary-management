@@ -143,8 +143,9 @@ export interface ImportPreviewRow {
   country: string;
   hire_date: string;
   currency: string;
-  base_pay_amount: Decimal;
+  pay: ImportPayAmount[]; // base pay first, then each other component given
 }
+export interface ImportPayAmount { type_id: number; name: string; amount: Decimal }
 export interface ValidationReport {
   ok: boolean;
   row_count: number;
