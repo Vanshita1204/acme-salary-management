@@ -100,6 +100,15 @@ function CompensationTypes() {
     });
   }
 
+  function toggleCounts(t: CompensationType, counts: boolean) {
+    setSaved(undefined);
+    void run(async () => {
+      await api.patch<CompensationType>(`/compensation-types/${t.id}`, { counts_toward_total: counts });
+      refresh();
+      setSaved(`“${t.name}” ${counts ? "now counts toward" : "is now outside"} total compensation.`);
+    });
+  }
+
   const err = (name: string) => errors[name] ?? error?.fields[name];
   return (
     <div className="grid grid-2">
@@ -117,7 +126,20 @@ function CompensationTypes() {
                   <td>{t.category}</td>
                   <td>{t.subtype ?? "—"}</td>
                   <td>{periodLabel(t.period_months)}</td>
-                  <td>{t.counts_toward_total ? "Yes" : <Badge>Outside total</Badge>}</td>
+                  <td>
+                    {t.is_base_pay ? "Yes" : (
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={t.counts_toward_total}
+                          disabled={submitting}
+                          aria-label={`${t.name} counts toward total`}
+                          onChange={(e) => toggleCounts(t, e.target.checked)}
+                        />{" "}
+                        {t.counts_toward_total ? "Yes" : "Outside total"}
+                      </label>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

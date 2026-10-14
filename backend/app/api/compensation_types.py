@@ -1,10 +1,14 @@
-from fastapi import APIRouter, status
+from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import select
 
 from app.api.db_errors import translate_db_errors
 from app.api.deps import DbSession, get_or_404
 from app.models import CompensationType
-from app.schemas.catalog import CompensationTypeIn, CompensationTypeOut
+from app.schemas.catalog import (
+    CompensationTypeIn,
+    CompensationTypeOut,
+    CompensationTypeUpdate,
+)
 
 router = APIRouter(prefix="/compensation-types", tags=["compensation-types"])
 
@@ -37,5 +41,22 @@ def create_compensation_type(
     comp_type = CompensationType(**body.model_dump(), is_base_pay=False)
     with translate_db_errors(db):
         db.add(comp_type)
+        db.commit()
+    return comp_type
+
+
+@router.patch("/{type_id}", response_model=CompensationTypeOut)
+def update_compensation_type(
+    type_id: int, body: CompensationTypeUpdate, db: DbSession
+) -> CompensationType:
+    """Change whether a type counts toward total compensation (CTC)."""
+    comp_type = get_or_404(db, CompensationType, type_id, "compensation type")
+    if comp_type.is_base_pay and not body.counts_toward_total:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            "Base pay always counts toward total compensation.",
+        )
+    with translate_db_errors(db):
+        comp_type.counts_toward_total = body.counts_toward_total
         db.commit()
     return comp_type

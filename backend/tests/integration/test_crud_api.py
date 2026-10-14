@@ -146,6 +146,24 @@ def test_create_compensation_type_is_never_base_pay(client, catalog):
     assert created in client.get("/compensation-types").json()
 
 
+def test_counts_toward_total_can_be_edited_except_for_base_pay(client, catalog):
+    created = client.post(
+        "/compensation-types",
+        json={"name": "Spot", "category": unique("bonus"), "period_months": 1},
+    ).json()
+
+    response = client.patch(
+        f"/compensation-types/{created['id']}", json={"counts_toward_total": False}
+    )
+    assert response.status_code == 200
+    assert response.json()["counts_toward_total"] is False
+
+    rejected = client.patch(
+        f"/compensation-types/{catalog['base_pay']}", json={"counts_toward_total": False}
+    )
+    assert rejected.status_code == 422
+
+
 def test_compensation_type_counts_toward_total_by_default_and_can_opt_out(client):
     def create(**extra):
         body = {

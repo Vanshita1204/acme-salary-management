@@ -53,6 +53,14 @@ class CompensationTypeIn(BaseModel):
     )
 
 
+class CompensationTypeUpdate(BaseModel):
+    """Only the CTC flag is editable; a type's identity and period are fixed once records use it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    counts_toward_total: bool
+
+
 class CompensationTypeOut(ORMModel):
     id: int
     name: str
