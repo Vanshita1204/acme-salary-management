@@ -150,6 +150,8 @@ export interface ValidationReport {
   ok: boolean;
   row_count: number;
   errors: RowError[];
+  /** Companies named in the file that don't exist yet; the app can add them on request. */
+  unknown_companies?: string[];
   preview: ImportPreviewRow[];
 }
 export interface ImportConfirmed { created: number; employee_ids: number[] }

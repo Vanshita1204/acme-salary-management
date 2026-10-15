@@ -213,3 +213,20 @@ def test_other_pay_amounts_are_checked_under_their_own_column(value, reason):
 def test_zero_is_allowed_for_other_pay_but_not_base_pay():
     assert run(record(**{"housing allowance": "0"}), header=PAY_HEADER).ok
     assert not run(record(**{BASE_PAY: "0"}), header=PAY_HEADER).ok
+
+
+def test_unknown_companies_are_listed_once_each_as_written():
+    result = run(
+        record(email="a@example.com", company="Umbrella"),
+        record(email="b@example.com", company="umbrella"),
+        record(email="c@example.com", company="Hooli"),
+        record(email="d@example.com", company="Globex"),
+        record(email="e@example.com", company="Hooli", department="Nowhere"),
+    )
+
+    assert result.unknown_companies == ["Umbrella", "Hooli"]
+    assert not result.ok  # still rejected until the companies exist
+
+
+def test_a_file_of_known_companies_lists_none():
+    assert run(record()).unknown_companies == []

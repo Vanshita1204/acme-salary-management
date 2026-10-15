@@ -1,0 +1,4 @@
+first_name,last_name,email,company,department,job_title,job_level,country,hire_date,currency,Base Pay,Housing Allowance,Meal Allowance,Transport Allowance,Annual Bonus,Quarterly Bonus,Retention Bonus,Annual Equity Grant (RSU),Learning & Development Reimbursement,Phone & Internet Reimbursement,Phone & Internet Reimbursement (CTC),Wellness Reimbursement,Annual Variable Pay (Target)
+Meera,Kapoor,meera.kapoor.sample@example.com,Acme India Pvt Ltd,Engineering,Account Executive,L3,IN,2026-09-01,INR,2400000,25000,3000,2000,200000,,,,,,,,
+Daniel,Whitfield,daniel.whitfield.sample@example.com,Acme UK Ltd,Finance,Accountant,L2,GB,2026-09-15,GBP,62000,,,,5000,,,,,,,,
+Sofia,Martins,sofia.martins.sample@example.com,Acme Latin America Ltda,Customer Support,Content Strategist,L1,BR,2026-10-01,BRL,180000,,,,,,,,,,,,
