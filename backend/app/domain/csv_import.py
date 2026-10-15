@@ -143,9 +143,6 @@ class ImportContext:
 class ImportResult:
     rows: list[ImportRow] = field(default_factory=list)
     errors: list[RowError] = field(default_factory=list)
-    # Company names in the file that don't exist yet, as written, once each. The import
-    # itself never creates them; the caller can offer to, after the person confirms.
-    unknown_companies: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -195,10 +192,6 @@ def validate_import(
         result.errors.extend(errors)
         if parsed is not None:
             result.rows.append(parsed)
-        elif any(e.reason == UNKNOWN_COMPANY for e in errors):
-            name = (record.get("company") or "").strip()
-            if name.casefold() not in {n.casefold() for n in result.unknown_companies}:
-                result.unknown_companies.append(name)
     return result
 
 

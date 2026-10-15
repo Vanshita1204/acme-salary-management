@@ -1,10 +1,10 @@
 import { useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { API_URL, ApiError, api } from "../api/client";
-import type { Company, ImportConfirmed, ValidationReport } from "../api/types";
+import type { ImportConfirmed, ValidationReport } from "../api/types";
 import { Field, FormError, useSubmit } from "../components/forms";
 import { Alert, Badge, PageHeader } from "../components/ui";
-import { useActor, useLoadedReference, useReference } from "../lib/context";
+import { useActor, useLoadedReference } from "../lib/context";
 import { formatDate, formatInteger, formatMoney } from "../lib/format";
 
 type Step = "choose" | "review" | "done";
@@ -12,7 +12,6 @@ type Step = "choose" | "review" | "done";
 /** Upload → validation report → confirm (FR-5). Nothing is saved until the last step. */
 export default function ImportPage() {
   const ref = useLoadedReference();
-  const { refresh } = useReference();
   const { actor } = useActor();
   const [step, setStep] = useState<Step>("choose");
   const [file, setFile] = useState<File | undefined>();
@@ -39,22 +38,6 @@ export default function ImportPage() {
     void check.run(async () => {
       setReport(await api.postForm<ValidationReport>("/import/validate", upload()));
       setStep("review");
-    });
-  }
-
-  // The file names companies that don't exist yet. Only on request, so a typo in the file
-  // doesn't quietly become a new legal entity: add them, then check the same file again.
-  function addCompanies(names: string[]) {
-    void check.run(async () => {
-      for (const name of names) {
-        try {
-          await api.post<Company>("/companies", { name });
-        } catch (caught) {
-          if (!(caught instanceof ApiError && caught.status === 409)) throw caught; // already there
-        }
-      }
-      refresh();
-      setReport(await api.postForm<ValidationReport>("/import/validate", upload()));
     });
   }
 
@@ -115,8 +98,8 @@ export default function ImportPage() {
         <section className="card">
           <h2>Choose a CSV file</h2>
           <p>
-            <strong>1. Enter the reference data first.</strong> Departments, job titles, levels and compensation types must already exist under{" "}
-            <Link to="/reference">Reference data</Link>, and a column that isn't a known compensation type is rejected. A company that doesn't exist yet can be added from the review step, after you confirm.
+            <strong>1. Enter the reference data first.</strong> Companies, departments, job titles, levels and compensation types must already exist under{" "}
+            <Link to="/reference">Reference data</Link>. An import never creates them, and a column that isn't a known compensation type is rejected.
           </p>
           <p>
             <strong>2. Download the template.</strong> It has the employee fields, then one column per compensation type, so it always matches your current catalog.{" "}
@@ -153,20 +136,6 @@ export default function ImportPage() {
             </Alert>
           )}
           <FormError error={save.error} />
-          <FormError error={check.error} />
-
-          {(report.unknown_companies?.length ?? 0) > 0 && (
-            <section className="card" aria-label="Companies not found">
-              <h2>{report.unknown_companies!.length === 1 ? "A company in this file doesn't exist yet" : "Some companies in this file don't exist yet"}</h2>
-              <p>{report.unknown_companies!.map((name) => `“${name}”`).join(", ")}</p>
-              <p className="muted">Check the spelling first: adding a misspelled name creates a new company. If they are right, add them and the file is checked again.</p>
-              <div className="actions">
-                <button type="button" className="primary" onClick={() => addCompanies(report.unknown_companies!)} disabled={check.submitting}>
-                  {check.submitting ? "Adding…" : `Add ${report.unknown_companies!.length === 1 ? "this company" : `these ${report.unknown_companies!.length} companies`} and check again`}
-                </button>
-              </div>
-            </section>
-          )}
 
           {report.errors.length > 0 && (
             <section className="card">

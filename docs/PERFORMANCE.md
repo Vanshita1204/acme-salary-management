@@ -1,6 +1,6 @@
 # Performance — Scale Lab Results
 
-Results of the Scale Lab experiments (`docs/SCALE_LAB.md`): E1–E3 in Phase 1, E4–E8 in Phase 16, E9 on the hosted instance. Run at **S = 10,000** and **M = 1,000,000** employees. Raw numbers and full `EXPLAIN (ANALYZE, BUFFERS)` plans are in `backend/scale_lab/results/*.json`; `python -m scale_lab.report` regenerates the tables.
+Results of the Scale Lab experiments (`docs/SCALE_LAB.md`): E1–E3 in Phase 1, E4–E8 in Phase 16. Run at **S = 10,000** and **M = 1,000,000** employees. Raw numbers and full `EXPLAIN (ANALYZE, BUFFERS)` plans are in `backend/scale_lab/results/*.json`; `python -m scale_lab.report` regenerates the tables.
 
 All results are synthetic data on one local machine. They show how queries and the data model behave at volume, not production traffic or concurrency.
 
@@ -14,7 +14,7 @@ All results are synthetic data on one local machine. They show how queries and t
 | Dataset | Employees | Compensation records | Current-compensation rows | On disk (records) |
 | --- | --- | --- | --- | --- |
 | S | 10,000 | 178,527 | 43,493 | 30 MB |
-| M | 1,000,000 | 17,763,707 | 4,341,442 | 2.9 GB |
+| M | 1,000,000 | 17,763,707 | 4,3 41,442 | 2.9 GB |
 
 - **Method:** `ANALYZE` after loading; each query run once to warm up, then 5 times; the median is reported.
 - **Harness:** `backend/scale_lab/`. Each experiment runs on its own lab database, never the dev database.
@@ -236,48 +236,6 @@ M, 17.76 M records, yearly partitions. Median ms:
 
 ---
 
-## E9 — Pay insights on the hosted instance (Render free tier)
-
-**Observation:** the Pay insights page was slow on the live app (a 10,000-employee database) but not on a laptop with the same data. Not part of the original plan; found by using the deployed app.
-
-**Instrumentation added first.** Every API response now carries a `Server-Timing` header: total server time (request received to response ready), database time with the number of queries and the slowest one, and whether the answer came from the cache. The Pay insights page shows these next to the browser's round trip, so server time, database time and network can be told apart.
-
-**Measured.** Server time per view, first load (cache miss):
-
-| View | Laptop | Render, one request at a time | Render, all views at once |
-| --- | --- | --- | --- |
-| Summary | 197 ms | 2.8 s | 4.7–15.8 s |
-| Pay by group (stats) | 79 ms | 1.8 s | 9.5–10.4 s |
-| Same role across countries | 110 ms | 2.1 s | 6.1–7.1 s |
-| Pay distribution (histogram) | 104 ms | 1.7 s | 9.9–11.4 s |
-| Outliers | 148 ms | 3.2 s | 10.7–12.7 s |
-| What pay is made of (composition) | 100 ms | 1.4 s | 8.6–12.7 s |
-| Pay changes | not measured | 8.0 s | up to 21.7 s |
-
-The laptop figures include 5–6 queries per view, 70–130 ms of it in the database. Other endpoints on Render are fine: `GET /departments` 5 ms, `GET /employees?limit=50` 40–120 ms. Run on 2026-10-15 against the live instance; the "all at once" column is the spread over several runs and the page's own timing table.
-
-**What was ruled out.** Missing statistics: `pg_stat_user_tables` showed all three large tables analysed by autovacuum (`last_autoanalyze` set; 10,000 / 176,719 / 43,474 live rows for `employees` / `compensation_records` / `current_compensation`).
-
-**What is not known.** Why the same queries are 10–20× slower on Render. The request times add up almost linearly when sent together (each view finishes a little later than the last), which points to a shared, CPU-limited instance, but it is **not confirmed**: no `EXPLAIN (ANALYZE, BUFFERS)` has been taken on the hosted database, and the database-time column added above had not yet been read from the live app when this was written.
-
-**Changes made, and their effect:**
-
-| Change | Effect |
-| --- | --- |
-| In-process response cache for `/analytics/*` GETs, 5-minute limit, emptied by any write through the API, bounded to 500 entries | Locally, summary 191 ms on a miss and about 0.1 ms on a hit. On Render, a cached view showed 0 ms server time. First loads are unchanged. |
-| Views below the fold load when scrolled into view | Intended to avoid seven heavy queries at once; effect on Render not yet measured |
-| Summary computed in one statement (population computed once, shared by the overall figures and three breakdowns) | No measurable change locally (about 195 ms before and after); effect on Render not yet measured |
-
-**Trade-offs of the cache:**
-
-- Staleness: changes made outside the API (the daily exchange-rate refresh, future-dated pay taking effect) show up after up to 5 minutes.
-- It lives in one process: correct for the single hosted instance, wrong for several workers, which would each hold their own copy or need a shared cache such as Redis.
-- It only helps repeat requests; the first load of each filter combination is as slow as before.
-
-**Conclusion so far:** the directory meets its 500 ms target on the hosted instance; the whole-population pay insights do not on the free tier. The cache fixes repeat visits, not first visits. If the database column shows the time is in the queries, the next step is pre-aggregation (E5's materialized view was 4.5–11× faster at 1M employees); if it is Python work or waiting, connection-pool and concurrency settings.
-
----
-
 ## Summary — what the lab confirmed or changed
 
 | Decision | Status | Evidence |
@@ -292,4 +250,3 @@ The laptop figures include 5–6 queries per view, 70–130 ms of it in the data
 | In-memory CSV import with a 10,000-row cap | Confirmed as a cap | E6: staging + SQL scales linearly with flat memory, only 1.8–2.5× faster |
 | The 11 secondary indexes | Confirmed | E7: all vs essential +3.7% load time; no indexes = 4.4× slower load |
 | Partition compensation records by date | Rejected for now | E8: reports 2.2–3.7× faster, lookups 1.6–3.5× slower, `id` can't stay unique |
-| Pay insights on the hosted free tier | Limit recorded, partly mitigated | E9: 1.4–8 s per view on Render vs 80–200 ms locally; cache makes repeats instant, first loads unchanged; cause not yet confirmed |

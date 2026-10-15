@@ -23,30 +23,6 @@ describe("import wizard", () => {
     expect(screen.queryByRole("button", { name: /^Import/ })).not.toBeInTheDocument();
   });
 
-  it("offers to add companies the file names, then checks the same file again", async () => {
-    let checks = 0;
-    const api = mockApi({
-      "POST /import/validate": () => {
-        checks += 1;
-        return checks === 1
-          ? { body: { ok: false, row_count: 0, errors: [{ row: 2, column: "company", reason: "unknown company" }], unknown_companies: ["Umbrella"], preview: [] } }
-          : { body: { ok: true, row_count: 1, errors: [], unknown_companies: [], preview: [previewRow] } };
-      },
-      "POST /companies": { status: 201, body: { id: 2, name: "Umbrella" } },
-    });
-    renderApp(<ImportPage />);
-    await userEvent.upload(await screen.findByLabelText("CSV file"), file());
-    await userEvent.click(screen.getByRole("button", { name: "Check file" }));
-
-    expect(await screen.findByText("“Umbrella”")).toBeInTheDocument();
-    expect(api.sent("POST", "/companies")).toHaveLength(0); // nothing is created until asked
-    await userEvent.click(screen.getByRole("button", { name: /Add this company and check again/ }));
-
-    expect(await screen.findByText("1 rows are valid")).toBeInTheDocument();
-    expect(api.sent("POST", "/companies")[0].json).toEqual({ name: "Umbrella" });
-    expect(api.sent("POST", "/import/validate")).toHaveLength(2);
-  });
-
   it("tells people to enter reference data first and links the dynamic template", async () => {
     mockApi();
     renderApp(<ImportPage />);
