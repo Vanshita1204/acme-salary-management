@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     # Latest-rates endpoint returning units of each currency per 1 USD (open.er-api.com format).
     exchange_rate_api_url: str = "https://open.er-api.com/v6/latest/USD"
     environment: str = "development"
+    # How long an identical pay-insight request is answered from memory (0 turns it off).
+    analytics_cache_seconds: float = 300
 
     @field_validator("database_url", "runtime_database_url")
     @classmethod

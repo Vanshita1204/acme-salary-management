@@ -6,6 +6,7 @@ import type {
 } from "../api/types";
 import { BarList, ChartCard, HistogramChart } from "../components/charts";
 import { FilterBar } from "../components/FilterBar";
+import { LazyOnView } from "../components/LazyOnView";
 import { TimingNote } from "../components/TimingNote";
 import { Field } from "../components/forms";
 import { AsyncView, Badge, EmptyState, PageHeader, RatesNote, StatTile } from "../components/ui";
@@ -50,11 +51,11 @@ export default function AnalyticsPage() {
       </div>
       <SummarySection base={base} depKey={key} currency={currency} />
       <StatsSection base={base} depKey={key} currency={currency} />
-      <RoleSection base={base} depKey={key} currency={currency} />
-      <DistributionSection base={base} depKey={key} currency={currency} />
-      <OutlierSection base={base} depKey={key} currency={currency} />
-      <CompositionSection base={base} depKey={key} currency={currency} />
-      <ChangesSection base={filterParams(view)} depKey={search.toString()} />
+      <LazyOnView title="Same role across countries"><RoleSection base={base} depKey={key} currency={currency} /></LazyOnView>
+      <LazyOnView title="Pay distribution"><DistributionSection base={base} depKey={key} currency={currency} /></LazyOnView>
+      <LazyOnView title="Outliers"><OutlierSection base={base} depKey={key} currency={currency} /></LazyOnView>
+      <LazyOnView title="What pay is made of"><CompositionSection base={base} depKey={key} currency={currency} /></LazyOnView>
+      <LazyOnView title="Pay changes"><ChangesSection base={filterParams(view)} depKey={search.toString()} /></LazyOnView>
       <TimingNote prefix="/analytics/" />
     </>
   );

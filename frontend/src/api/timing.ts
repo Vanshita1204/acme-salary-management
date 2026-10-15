@@ -4,7 +4,7 @@ import { useSyncExternalStore } from "react";
 // received to response ready) and as the browser saw it (the full round trip). The gap is
 // the network plus, on a hosted free tier, any wait for the service to wake up.
 
-export interface Timing { path: string; serverMs: number | null; totalMs: number }
+export interface Timing { path: string; serverMs: number | null; totalMs: number; cached: boolean }
 
 const latest = new Map<string, Timing>();
 let snapshot: Timing[] = [];
@@ -16,8 +16,13 @@ export function parseServerTiming(header: string | null): number | null {
   return match ? Number(match[1]) : null;
 }
 
-export function recordTiming(path: string, serverMs: number | null, totalMs: number) {
-  latest.set(path, { path, serverMs, totalMs });
+/** True when the server answered from its response cache (`cache;desc="hit"`). */
+export function parseCacheHit(header: string | null): boolean {
+  return /cache;desc="?hit"?/.test(header ?? "");
+}
+
+export function recordTiming(path: string, serverMs: number | null, totalMs: number, cached = false) {
+  latest.set(path, { path, serverMs, totalMs, cached });
   snapshot = [...latest.values()];
   listeners.forEach((listener) => listener());
 }

@@ -1,5 +1,5 @@
 import { formatDate } from "../lib/format";
-import { parseServerTiming, recordTiming } from "./timing";
+import { parseCacheHit, parseServerTiming, recordTiming } from "./timing";
 
 // The only place that talks to the backend. Every failure becomes an ApiError whose
 // message is safe to show a person; field-level problems are kept for inline display.
@@ -95,7 +95,10 @@ async function request<T>(method: string, path: string, init: { params?: Params;
     throw new ApiError(0, "Can't reach the server. Check your connection and try again.");
   }
   const text = await response.text();
-  if (method === "GET") recordTiming(path, parseServerTiming(response.headers.get("Server-Timing")), performance.now() - started);
+  if (method === "GET") {
+    const timing = response.headers.get("Server-Timing");
+    recordTiming(path, parseServerTiming(timing), performance.now() - started, parseCacheHit(timing));
+  }
   let parsed: unknown = null;
   if (text) {
     try {

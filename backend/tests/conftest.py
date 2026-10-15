@@ -61,6 +61,7 @@ def ensure_database(url: str) -> None:
 _URL = test_database_url()
 ensure_database(_URL)
 os.environ["DATABASE_URL"] = _URL
+os.environ["ANALYTICS_CACHE_SECONDS"] = "0"  # tests that want the cache switch it on
 os.environ.pop("RUNTIME_DATABASE_URL", None)
 get_settings.cache_clear()
 

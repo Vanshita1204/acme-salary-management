@@ -17,6 +17,7 @@ from decimal import Decimal
 
 from sqlalchemy import (
     ColumnElement,
+    Float,
     Numeric,
     Select,
     Text,
@@ -25,8 +26,10 @@ from sqlalchemy import (
     cast,
     func,
     literal,
+    null,
     select,
     true,
+    union_all,
 )
 from sqlalchemy.dialects.postgresql import ARRAY, array, array_agg
 from sqlalchemy.orm import Session
@@ -174,54 +177,75 @@ class Summary:
 
 
 def summary(session: Session, query: DirectoryQuery) -> Summary:
+    """One statement for every number: the priced population is a CTE referenced by each
+    branch, so Postgres computes it once instead of once per breakdown."""
     _, pop, context = prepare(session, query)
-    priced = select(pop).where(pop.c.total.is_not(None)).subquery()
-    headcount, total, average, median = session.execute(
-        select(
-            func.count(),
-            func.sum(priced.c.total),
-            func.avg(priced.c.total),
-            func.percentile_cont(0.5).within_group(priced.c.total),
-        )
-    ).one()
+    priced = select(pop).where(pop.c.total.is_not(None)).cte("priced")
+    total = priced.c.total
+    none_avg, none_median = cast(null(), Numeric), cast(null(), Float)
 
-    def breakdown(key_col, label_col, join_model, join_on) -> list[CostRow]:
-        rows = session.execute(
-            select(key_col, label_col, func.count(), func.sum(priced.c.total))
+    def branch(kind: str, key_col, label_col, join_model, join_on):
+        return (
+            select(
+                literal(kind).label("kind"),
+                cast(key_col, Text).label("key"),
+                label_col.label("label"),
+                func.count().label("headcount"),
+                func.sum(total).label("cost"),
+                none_avg.label("average"),
+                none_median.label("median"),
+            )
             .select_from(priced)
             .join(join_model, join_on)
             .group_by(key_col, label_col)
-            .order_by(func.sum(priced.c.total).desc(), label_col)
-        ).all()
+        )
+
+    overall = select(
+        literal("overall").label("kind"),
+        cast(null(), Text).label("key"),
+        cast(null(), Text).label("label"),
+        func.count().label("headcount"),
+        func.sum(total).label("cost"),
+        func.avg(total).label("average"),
+        func.percentile_cont(0.5).within_group(total).label("median"),
+    ).select_from(priced)
+    rows = session.execute(
+        union_all(
+            overall,
+            branch("country", Country.code, Country.name, Country, Country.code == priced.c.country),
+            branch("department", Department.id, Department.name, Department, Department.id == priced.c.department_id),
+            branch("company", Company.id, Company.name, Company, Company.id == priced.c.company_id),
+        )
+    ).all()
+
+    headcount, grand_total, average, median = next(
+        (r.headcount, r.cost, r.average, r.median) for r in rows if r.kind == "overall"
+    )
+
+    def breakdown(kind: str) -> list[CostRow]:
+        picked = sorted(
+            (r for r in rows if r.kind == kind), key=lambda r: (-r.cost, r.label)
+        )
         return [
             CostRow(
-                key=str(key),
-                label=label,
-                headcount=count,
-                total_cost=money(cost),
-                share=(Decimal(cost) / Decimal(total)).quantize(Decimal("0.0001")),
+                key=r.key,
+                label=r.label,
+                headcount=r.headcount,
+                total_cost=money(r.cost),
+                share=(Decimal(r.cost) / Decimal(grand_total)).quantize(Decimal("0.0001")),
             )
-            for key, label, count, cost in rows
+            for r in picked
         ]
 
     return Summary(
         context=context,
         headcount=headcount,
-        total_cost=money(total),
+        total_cost=money(grand_total),
         average=money(average),
         median=money(median),
-        by_country=breakdown(
-            Country.code, Country.name, Country, Country.code == priced.c.country
-        ),
-        by_department=breakdown(
-            Department.id,
-            Department.name,
-            Department,
-            Department.id == priced.c.department_id,
-        ),
-        by_company=breakdown(
-            Company.id, Company.name, Company, Company.id == priced.c.company_id
-        ),
+        by_country=breakdown("country"),
+        by_department=breakdown("department"),
+        by_company=breakdown("company"),
     )
 
 

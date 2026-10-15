@@ -24,7 +24,7 @@ export function TimingNote({ prefix }: { prefix: string }) {
             {timings.map((t) => (
               <tr key={t.path}>
                 <td>{t.path.replace(prefix, "") || t.path}</td>
-                <td className="num">{ms(t.serverMs)}</td>
+                <td className="num">{ms(t.serverMs)}{t.cached && " (cached)"}</td>
                 <td className="num">{ms(t.totalMs)}</td>
                 <td className="num">{t.serverMs === null ? "—" : ms(Math.max(0, t.totalMs - t.serverMs))}</td>
               </tr>
@@ -32,7 +32,7 @@ export function TimingNote({ prefix }: { prefix: string }) {
           </tbody>
         </table>
       </div>
-      <p>Round trip includes the network and, on a free hosted tier, waiting for an idle service to wake up. Server time does not.</p>
+      <p>Round trip includes the network and, on a free hosted tier, waiting for an idle service to wake up. Server time does not. "Cached" means the server reused a recent identical answer instead of recomputing it.</p>
     </details>
   );
 }

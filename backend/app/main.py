@@ -1,6 +1,6 @@
 import time
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import InterfaceError, OperationalError
 
@@ -15,20 +15,54 @@ from app.api import (
     org,
     reference,
 )
+from app.core.cache import CachedResponse, ResponseCache
+from app.core.config import get_settings
 from app.services.errors import ServiceError
 
 app = FastAPI(title="ACME Salary Management")
 
 
+response_cache = ResponseCache(get_settings().analytics_cache_seconds)
+
+
 @app.middleware("http")
-async def server_timing(request: Request, call_next):
+async def timing_and_cache(request: Request, call_next):
     """Report how long the server took, from receiving the request to having the response
-    ready to send, as a `Server-Timing` header. The browser's own timing also includes the
-    network and, on a hosted free tier, any wait for the service to wake up."""
+    ready to send, as a `Server-Timing` header (the browser's own timing also includes the
+    network and, on a hosted free tier, any wait for the service to wake up). Pay-insight
+    GETs are answered from `response_cache` when an identical one was computed recently;
+    any write through the API empties it."""
     started = time.perf_counter()
+
+    def elapsed_ms() -> float:
+        return (time.perf_counter() - started) * 1000
+
+    if request.method not in ("GET", "HEAD"):
+        response_cache.invalidate()
+    cacheable = (
+        response_cache.enabled
+        and request.method == "GET"
+        and "/analytics/" in request.url.path
+    )
+    key = f"{request.url.path}?{request.url.query}"
+    if cacheable and (hit := response_cache.get(key)):
+        response = Response(hit.body, hit.status_code, hit.headers)
+        response.headers["Server-Timing"] = f'app;dur={elapsed_ms():.1f}, cache;desc="hit"'
+        return response
+
+    version = response_cache.version
     response = await call_next(request)
-    elapsed_ms = (time.perf_counter() - started) * 1000
-    response.headers["Server-Timing"] = f"app;dur={elapsed_ms:.1f}"
+    if cacheable and response.status_code == 200:
+        body = b"".join([chunk async for chunk in response.body_iterator])
+        response_cache.put(
+            key, CachedResponse(200, dict(response.headers), body), version
+        )
+        response = Response(body, response.status_code, dict(response.headers))
+    response.headers["Server-Timing"] = (
+        f'app;dur={elapsed_ms():.1f}, cache;desc="miss"'
+        if cacheable
+        else f"app;dur={elapsed_ms():.1f}"
+    )
     return response
 
 
