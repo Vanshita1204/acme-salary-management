@@ -6,6 +6,7 @@ import type {
 } from "../api/types";
 import { BarList, ChartCard, HistogramChart } from "../components/charts";
 import { FilterBar } from "../components/FilterBar";
+import { TimingNote } from "../components/TimingNote";
 import { Field } from "../components/forms";
 import { AsyncView, Badge, EmptyState, PageHeader, RatesNote, StatTile } from "../components/ui";
 import { useLoadedReference, useReporting } from "../lib/context";
@@ -54,6 +55,7 @@ export default function AnalyticsPage() {
       <OutlierSection base={base} depKey={key} currency={currency} />
       <CompositionSection base={base} depKey={key} currency={currency} />
       <ChangesSection base={filterParams(view)} depKey={search.toString()} />
+      <TimingNote prefix="/analytics/" />
     </>
   );
 }

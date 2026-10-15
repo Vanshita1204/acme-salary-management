@@ -1,3 +1,5 @@
+import time
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import InterfaceError, OperationalError
@@ -16,6 +18,18 @@ from app.api import (
 from app.services.errors import ServiceError
 
 app = FastAPI(title="ACME Salary Management")
+
+
+@app.middleware("http")
+async def server_timing(request: Request, call_next):
+    """Report how long the server took, from receiving the request to having the response
+    ready to send, as a `Server-Timing` header. The browser's own timing also includes the
+    network and, on a hosted free tier, any wait for the service to wake up."""
+    started = time.perf_counter()
+    response = await call_next(request)
+    elapsed_ms = (time.perf_counter() - started) * 1000
+    response.headers["Server-Timing"] = f"app;dur={elapsed_ms:.1f}"
+    return response
 
 
 # What people see when something we didn't anticipate goes wrong. Never the exception text:

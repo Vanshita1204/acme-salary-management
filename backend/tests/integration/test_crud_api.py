@@ -449,3 +449,11 @@ def test_directory_and_analytics_can_be_narrowed_to_one_company(client, catalog)
         "/analytics/stats", params={"group_by": "company", "company_id": other["id"]}
     ).json()
     assert [g["label"] for g in stats["groups"]] == [other["name"]]
+
+
+def test_responses_report_server_time(client):
+    response = client.get("/health")
+
+    name, _, value = response.headers["server-timing"].partition(";dur=")
+    assert name == "app"
+    assert float(value) >= 0
