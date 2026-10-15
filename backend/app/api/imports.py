@@ -42,6 +42,7 @@ def report(result: ImportResult) -> ValidationReport:
         ok=result.ok,
         row_count=len(result.rows),
         errors=[RowErrorOut(**vars(e)) for e in result.errors],
+        unknown_companies=result.unknown_companies,
         preview=[
             ImportRowOut(**{**vars(r), "pay": [PayAmountOut(**vars(p)) for p in r.pay]})
             for r in result.rows[:PREVIEW_LIMIT]

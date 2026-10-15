@@ -37,6 +37,9 @@ class ValidationReport(BaseModel):
     ok: bool  # true only when every row is valid; confirm saves nothing otherwise
     row_count: int  # data rows that passed validation
     errors: list[RowErrorOut]
+    # Companies named in the file that don't exist yet (each is also a row error). The
+    # app can create them on request, then the file is checked again.
+    unknown_companies: list[str] = []
     preview: list[
         ImportRowOut
     ]  # the first PREVIEW_LIMIT valid rows, as they'd be saved
