@@ -69,6 +69,9 @@ def directory_query(
     country: Annotated[list[str] | None, Query()] = None,
     job_title_id: Annotated[list[int] | None, Query()] = None,
     job_level_id: Annotated[list[int] | None, Query()] = None,
+    company_id: Annotated[
+        list[int] | None, Query(description="Legal entity (GET /companies)")
+    ] = None,
     min_level_rank: Annotated[
         int | None, Query(description="Only levels at or above this rank")
     ] = None,
@@ -91,6 +94,7 @@ def directory_query(
         min_level_rank=min_level_rank,
         max_level_rank=max_level_rank,
         statuses=list(status_ or []),
+        company_ids=company_id or [],
         sort=sort,
         order=order,
         reporting_currency=reporting_currency,
@@ -111,8 +115,8 @@ def list_directory(
 ) -> DirectoryPageOut:
     """Employee directory (FR-1). Filters combine with AND; repeat a filter for OR
     within it (`?country=IN&country=US`, `?department_id=1&department_id=4`).
-    Department, title and level filter by id (`GET /departments`, `/job-titles`,
-    `/job-levels`). Paginate with the returned cursors."""
+    Department, title, level and company filter by id (`GET /departments`,
+    `/job-titles`, `/job-levels`, `/companies`). Paginate with the returned cursors."""
     try:
         page = list_employees(db, replace(view, cursor=cursor, limit=limit))
     except CursorError as exc:

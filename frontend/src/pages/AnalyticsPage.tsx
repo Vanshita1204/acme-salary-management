@@ -20,6 +20,7 @@ const GROUPS: { value: GroupBy; label: string }[] = [
   { value: "country", label: "Country" },
   { value: "title", label: "Job title" },
   { value: "level", label: "Level" },
+  { value: "company", label: "Company" },
 ];
 
 const TOP = 10;
@@ -124,6 +125,9 @@ function SummarySection({ base, depKey, currency }: SectionProps) {
                 </ChartCard>
                 <ChartCard title="Cost by department" subtitle={`In ${currency}`} table={<CostTable rows={s.by_department} currency={currency} what="Department" />}>
                   <BarList rows={costBars(s.by_department, currency)} ariaLabel="Annual cost by department" />
+                </ChartCard>
+                <ChartCard title="Cost by company" subtitle={`Each legal entity, in ${currency}`} table={<CostTable rows={s.by_company} currency={currency} what="Company" />}>
+                  <BarList rows={costBars(s.by_company, currency)} ariaLabel="Annual cost by company" />
                 </ChartCard>
               </div>
             )}

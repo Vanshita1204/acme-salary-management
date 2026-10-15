@@ -30,7 +30,7 @@ def context(ctx: analytics.Context) -> dict:
 
 @router.get("/summary", response_model=SummaryOut)
 def summary(db: DbSession, view: DirectoryView) -> SummaryOut:
-    """Headcount and annual cost overall, with a breakdown by country and department."""
+    """Headcount and annual cost overall, with a breakdown by country, department and company."""
     result = analytics.summary(db, view)
     out = SummaryOut(
         **context(result.context),
@@ -40,6 +40,7 @@ def summary(db: DbSession, view: DirectoryView) -> SummaryOut:
         median=result.median,
         by_country=result.by_country,
         by_department=result.by_department,
+        by_company=result.by_company,
     )
     db.commit()  # keep future-dated records promoted while reading
     return out
@@ -49,7 +50,7 @@ def summary(db: DbSession, view: DirectoryView) -> SummaryOut:
 def grouped_stats(
     db: DbSession,
     view: DirectoryView,
-    group_by: Literal["department", "country", "title", "level"] = "department",
+    group_by: Literal["department", "country", "title", "level", "company"] = "department",
 ) -> StatsOut:
     """Average, median, minimum and maximum annual pay per group."""
     ctx, rows = analytics.grouped_stats(db, view, group_by)

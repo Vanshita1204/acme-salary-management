@@ -54,6 +54,7 @@ class DirectoryQuery:
     min_level_rank: int | None = None  # inclusive, by job_levels.rank
     max_level_rank: int | None = None
     statuses: list[str] = field(default_factory=list)
+    company_ids: list[int] = field(default_factory=list)
     sort: Sort = "name"
     order: Order = "asc"
     cursor: str | None = None
@@ -131,6 +132,7 @@ def apply_filters(stmt: Select, query: DirectoryQuery) -> Select:
         (Employee.job_title_id, query.job_title_ids),
         (Employee.job_level_id, query.job_level_ids),
         (Employee.status, query.statuses),
+        (Employee.company_id, query.company_ids),
     ):
         if values:
             stmt = stmt.where(column.in_(values))

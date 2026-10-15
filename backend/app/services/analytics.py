@@ -35,6 +35,7 @@ from app.domain.analytics import MIN_PEER_GROUP_SIZE, OUTLIER_HIGH, OUTLIER_LOW
 from app.domain.compensation import NON_INCREASE_REASONS
 from app.models import (
     ChangeReason,
+    Company,
     CompensationRecord,
     CompensationType,
     Country,
@@ -65,6 +66,7 @@ GROUPS = {  # group_by value -> (label column, sort column)
     "country": (Country.name, Country.name),
     "title": (JobTitle.name, JobTitle.name),
     "level": (JobLevel.code, JobLevel.rank),
+    "company": (Company.name, Company.name),
 }
 
 
@@ -106,6 +108,7 @@ def population(session: Session, query: DirectoryQuery, reporting: str) -> Selec
     stmt = (
         select(
             Employee.id.label("employee_id"),
+            Employee.company_id,
             Employee.department_id,
             Employee.job_title_id,
             Employee.job_level_id,
@@ -167,6 +170,7 @@ class Summary:
     median: Decimal | None
     by_country: list[CostRow]
     by_department: list[CostRow]
+    by_company: list[CostRow]
 
 
 def summary(session: Session, query: DirectoryQuery) -> Summary:
@@ -215,6 +219,9 @@ def summary(session: Session, query: DirectoryQuery) -> Summary:
             Department,
             Department.id == priced.c.department_id,
         ),
+        by_company=breakdown(
+            Company.id, Company.name, Company, Company.id == priced.c.company_id
+        ),
     )
 
 
@@ -238,6 +245,7 @@ def _group_join(group_by: str, pop):
         "country": (Country.code, Country, Country.code == pop.c.country),
         "title": (JobTitle.id, JobTitle, JobTitle.id == pop.c.job_title_id),
         "level": (JobLevel.id, JobLevel, JobLevel.id == pop.c.job_level_id),
+        "company": (Company.id, Company, Company.id == pop.c.company_id),
     }[group_by]
 
 

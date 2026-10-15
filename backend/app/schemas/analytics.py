@@ -33,6 +33,7 @@ class SummaryOut(AnalyticsOut):
     median: Decimal | None
     by_country: list[CostRow]
     by_department: list[CostRow]
+    by_company: list[CostRow]
 
 
 class StatsOut(AnalyticsOut):

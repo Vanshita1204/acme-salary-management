@@ -11,6 +11,7 @@ export type Order = "asc" | "desc";
 export interface View {
   q: string;
   departmentIds: number[];
+  companyIds: number[];
   countries: string[];
   titleIds: number[];
   levelIds: number[];
@@ -20,7 +21,7 @@ export interface View {
 }
 
 export const EMPTY_VIEW: View = {
-  q: "", departmentIds: [], countries: [], titleIds: [], levelIds: [], statuses: [], sort: "name", order: "asc",
+  q: "", departmentIds: [], companyIds: [], countries: [], titleIds: [], levelIds: [], statuses: [], sort: "name", order: "asc",
 };
 
 const SORTS: SortKey[] = ["name", "hire_date", "level", "compensation"];
@@ -34,6 +35,7 @@ export function parseView(search: URLSearchParams): View {
   return {
     q: search.get("q") ?? "",
     departmentIds: numbers(search.getAll("department_id")),
+    companyIds: numbers(search.getAll("company_id")),
     countries: search.getAll("country").map((c) => c.toUpperCase()),
     titleIds: numbers(search.getAll("job_title_id")),
     levelIds: numbers(search.getAll("job_level_id")),
@@ -48,6 +50,7 @@ export function filterParams(view: View): Params {
   return {
     q: view.q.trim() || undefined,
     department_id: view.departmentIds,
+    company_id: view.companyIds,
     country: view.countries,
     job_title_id: view.titleIds,
     job_level_id: view.levelIds,
@@ -76,7 +79,7 @@ export function viewToSearch(view: View, cursor?: string | null): URLSearchParam
 
 export function hasFilters(view: View): boolean {
   return Boolean(
-    view.q.trim() || view.departmentIds.length || view.countries.length || view.titleIds.length || view.levelIds.length || view.statuses.length,
+    view.q.trim() || view.departmentIds.length || view.companyIds.length || view.countries.length || view.titleIds.length || view.levelIds.length || view.statuses.length,
   );
 }
 

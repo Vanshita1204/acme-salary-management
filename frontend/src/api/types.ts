@@ -171,6 +171,7 @@ export interface Summary extends AnalyticsContext {
   median: Decimal | null;
   by_country: CostRow[];
   by_department: CostRow[];
+  by_company: CostRow[];
 }
 export interface StatsRow {
   key: string;
@@ -181,7 +182,7 @@ export interface StatsRow {
   minimum: Decimal;
   maximum: Decimal;
 }
-export type GroupBy = "department" | "country" | "title" | "level";
+export type GroupBy = "department" | "country" | "title" | "level" | "company";
 export interface Stats extends AnalyticsContext { group_by: GroupBy; groups: StatsRow[] }
 export interface RoleCountryRow {
   job_title_id: number;

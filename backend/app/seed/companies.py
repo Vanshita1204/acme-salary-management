@@ -1,38 +1,39 @@
-"""Synthetic company rows, generated with Faker.
+"""ACME's legal entities: a fixed set of named subsidiaries, each serving the countries
+it employs in. The employee seed places people in the entity that serves their country.
 
 Usage (from backend/):
-    python -m app.seed.companies [--count 100] [--seed 1204]
-
-Deterministic: the same seed and count (and the pinned Faker version) always produce the
-same names, so re-running inserts nothing new.
+    python -m app.seed.companies
 """
 
-import argparse
-
-from faker import Faker
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from app.db.session import SessionLocal
 from app.models import Company
 
-DEFAULT_COUNT = 100
-DEFAULT_SEED = 1204
+# entity name -> the countries it employs in (every seeded country appears exactly once)
+SUBSIDIARIES: dict[str, tuple[str, ...]] = {
+    "Acme Inc.": ("US", "CA"),
+    "Acme India Pvt Ltd": ("IN",),
+    "Acme UK Ltd": ("GB", "IE"),
+    "Acme GmbH": ("DE",),
+    "Acme Europe B.V.": ("NL", "FR", "ES", "PL", "SE"),
+    "Acme Latin America Ltda": ("BR", "MX"),
+    "Acme APAC Pte Ltd": ("SG", "AU"),
+    "Acme Middle East FZ-LLC": ("AE",),
+}
 
 
-def company_names(count: int = DEFAULT_COUNT, seed: int = DEFAULT_SEED) -> list[str]:
-    fake = Faker("en_US")
-    fake.seed_instance(seed)
-    return [fake.unique.company() for _ in range(count)]
+def company_names(count: int | None = None) -> list[str]:
+    """The first `count` entities (all by default), in a fixed order."""
+    return list(SUBSIDIARIES)[:count]
 
 
-def load_companies(
-    session: Session, count: int = DEFAULT_COUNT, seed: int = DEFAULT_SEED
-) -> int:
-    """Insert generated companies that don't exist yet; returns how many were inserted."""
+def load_companies(session: Session, count: int | None = None) -> int:
+    """Insert entities that don't exist yet; returns how many were inserted."""
     result = session.execute(
         insert(Company)
-        .values([{"name": name} for name in company_names(count, seed)])
+        .values([{"name": name} for name in company_names(count)])
         .on_conflict_do_nothing(index_elements=["name"])
         .returning(Company.id)
     )
@@ -40,14 +41,9 @@ def load_companies(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Generate synthetic companies.")
-    parser.add_argument("--count", type=int, default=DEFAULT_COUNT)
-    parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
-    args = parser.parse_args()
-
     with SessionLocal() as session, session.begin():
-        inserted = load_companies(session, args.count, args.seed)
-    print(f"Inserted {inserted} of {args.count} companies (others already existed).")
+        inserted = load_companies(session)
+    print(f"Inserted {inserted} of {len(SUBSIDIARIES)} companies (others already existed).")
 
 
 if __name__ == "__main__":

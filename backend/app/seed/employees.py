@@ -14,7 +14,7 @@ import random
 import time
 import unicodedata
 from collections.abc import Callable, Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
@@ -33,6 +33,7 @@ from app.models import (
     JobLevel,
     JobTitle,
 )
+from app.seed.companies import SUBSIDIARIES
 from app.seed.loaders import EMPLOYEE_LOADERS, METHODS, RECORD_LOADERS, Method
 from app.seed.org_structure import DEPARTMENT_TITLES, JOB_TITLES, LEVEL_CODES
 
@@ -151,11 +152,20 @@ class Catalog:
     departments: dict[str, int]  # name -> departments.id
     job_titles: dict[str, int]  # name -> job_titles.id
     job_levels: dict[str, int]  # code -> job_levels.id
+    # country -> entities that employ there; countries absent here use any company
+    company_ids_by_country: dict[str, list[int]] = field(default_factory=dict)
 
 
 def load_catalog(session: Session) -> Catalog:
     """Look up everything the seed depends on, failing clearly if 1.2 hasn't run."""
     company_ids = list(session.scalars(select(Company.id).order_by(Company.id)))
+    company_by_name = dict(session.execute(select(Company.name, Company.id)).all())
+    company_ids_by_country = {
+        country: [company_by_name[name]]
+        for name, countries in SUBSIDIARIES.items()
+        if name in company_by_name
+        for country in countries
+    }
     currencies = dict(
         session.execute(
             select(Country.code, Country.default_currency).where(
@@ -212,6 +222,7 @@ def load_catalog(session: Session) -> Catalog:
         departments=departments,
         job_titles=job_titles,
         job_levels=job_levels,
+        company_ids_by_country=company_ids_by_country,
     )
 
 
@@ -298,7 +309,9 @@ class Generator:
 
         fake = self.fakers[profile.locale]
         first, last = fake.first_name(), fake.last_name()
-        company_id = rng.choice(self.catalog.company_ids)
+        company_id = rng.choice(
+            self.catalog.company_ids_by_country.get(country) or self.catalog.company_ids
+        )
 
         target_annual = (
             profile.l3_base

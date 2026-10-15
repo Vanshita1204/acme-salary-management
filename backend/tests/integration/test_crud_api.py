@@ -416,3 +416,36 @@ def test_records_have_no_update_or_delete_endpoint(client, catalog, employee, me
     response = getattr(client, method)(f"/compensation-records/{record['id']}")
 
     assert response.status_code == 405
+
+
+# --- company filter and breakdown ---
+
+
+def test_directory_and_analytics_can_be_narrowed_to_one_company(client, catalog):
+    other = client.post("/companies", json={"name": unique("pytest_sub")}).json()
+    usd = {"current_country": "us", "currency": "usd"}  # priced without exchange rates
+    mine = client.post("/employees", json=employee_body(catalog, **usd)).json()
+    theirs = client.post(
+        "/employees", json=employee_body(catalog, company_id=other["id"], **usd)
+    ).json()
+
+    def ids(**params):
+        page = client.get("/employees", params={"limit": 200, **params}).json()
+        return {item["id"] for item in page["items"]}
+
+    assert mine["id"] in ids(company_id=catalog["company_id"])
+    assert theirs["id"] not in ids(company_id=catalog["company_id"])
+    assert ids(company_id=other["id"]) == {theirs["id"]}
+    assert ids(company_id=[other["id"], catalog["company_id"]]) >= {
+        mine["id"],
+        theirs["id"],
+    }
+
+    summary = client.get("/analytics/summary", params={"company_id": other["id"]}).json()
+    assert [row["key"] for row in summary["by_company"]] == [str(other["id"])]
+    assert summary["headcount"] == 1
+
+    stats = client.get(
+        "/analytics/stats", params={"group_by": "company", "company_id": other["id"]}
+    ).json()
+    assert [g["label"] for g in stats["groups"]] == [other["name"]]

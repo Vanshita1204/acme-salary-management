@@ -3,9 +3,9 @@ import { EMPTY_VIEW, filterParams, hasFilters, nextSort, parseView, viewParams, 
 
 describe("directory view in the URL", () => {
   it("round-trips through the API's own parameter names", () => {
-    const view = { ...EMPTY_VIEW, q: "kumar", departmentIds: [2, 5], countries: ["IN", "US"], statuses: ["active" as const], sort: "compensation" as const, order: "desc" as const };
+    const view = { ...EMPTY_VIEW, q: "kumar", departmentIds: [2, 5], companyIds: [3], countries: ["IN", "US"], statuses: ["active" as const], sort: "compensation" as const, order: "desc" as const };
     const search = viewToSearch(view);
-    expect(search.toString()).toBe("q=kumar&department_id=2&department_id=5&country=IN&country=US&status=active&sort=compensation&order=desc");
+    expect(search.toString()).toBe("q=kumar&department_id=2&department_id=5&company_id=3&country=IN&country=US&status=active&sort=compensation&order=desc");
     expect(parseView(search)).toEqual(view);
   });
   it("leaves defaults out of the URL", () => {
@@ -23,11 +23,12 @@ describe("directory view in the URL", () => {
     expect(viewParams(view)).toMatchObject({ q: "ab", job_level_id: [3], sort: "hire_date", order: "desc" });
   });
   it("analytics reuse the filters but never the sort", () => {
-    expect(Object.keys(filterParams(EMPTY_VIEW)).sort()).toEqual(["country", "department_id", "job_level_id", "job_title_id", "q"]);
+    expect(Object.keys(filterParams(EMPTY_VIEW)).sort()).toEqual(["company_id", "country", "department_id", "job_level_id", "job_title_id", "q"]);
   });
   it("knows when a filter is active", () => {
     expect(hasFilters(EMPTY_VIEW)).toBe(false);
     expect(hasFilters({ ...EMPTY_VIEW, q: "  " })).toBe(false);
+    expect(hasFilters({ ...EMPTY_VIEW, companyIds: [1] })).toBe(true);
     expect(hasFilters({ ...EMPTY_VIEW, levelIds: [1] })).toBe(true);
   });
   it("clicking a column flips its order; a new column starts sensibly", () => {

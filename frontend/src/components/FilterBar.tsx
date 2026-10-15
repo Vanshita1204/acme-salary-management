@@ -35,6 +35,12 @@ export function FilterBar({ view, onChange, showStatus = false }: {
         aria-label="Search by name, email or employee code"
       />
       <MultiSelect
+        label="Company"
+        options={ref.companies.map((c) => ({ value: c.id, label: c.name }))}
+        selected={view.companyIds}
+        onChange={(companyIds) => onChange({ companyIds })}
+      />
+      <MultiSelect
         label="Department"
         options={ref.departments.map((d) => ({ value: d.id, label: d.name }))}
         selected={view.departmentIds}
@@ -70,7 +76,7 @@ export function FilterBar({ view, onChange, showStatus = false }: {
         <button
           type="button"
           className="link"
-          onClick={() => onChange({ q: "", departmentIds: [], countries: [], titleIds: [], levelIds: [], statuses: [] })}
+          onClick={() => onChange({ q: "", departmentIds: [], companyIds: [], countries: [], titleIds: [], levelIds: [], statuses: [] })}
         >
           Clear filters
         </button>
