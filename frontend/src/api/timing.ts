@@ -4,7 +4,14 @@ import { useSyncExternalStore } from "react";
 // received to response ready) and as the browser saw it (the full round trip). The gap is
 // the network plus, on a hosted free tier, any wait for the service to wake up.
 
-export interface Timing { path: string; serverMs: number | null; totalMs: number; cached: boolean }
+export interface Timing {
+  path: string;
+  serverMs: number | null;
+  totalMs: number;
+  cached: boolean;
+  dbMs: number | null;
+  queries: number | null;
+}
 
 const latest = new Map<string, Timing>();
 let snapshot: Timing[] = [];
@@ -16,13 +23,20 @@ export function parseServerTiming(header: string | null): number | null {
   return match ? Number(match[1]) : null;
 }
 
+/** Time spent in the database and how many queries ran (`db;dur=12.3;desc="4 queries, …"`). */
+export function parseDbTiming(header: string | null): { dbMs: number; queries: number } | null {
+  const match = header?.match(/db;dur=([\d.]+);desc="(\d+) quer/);
+  return match ? { dbMs: Number(match[1]), queries: Number(match[2]) } : null;
+}
+
 /** True when the server answered from its response cache (`cache;desc="hit"`). */
 export function parseCacheHit(header: string | null): boolean {
   return /cache;desc="?hit"?/.test(header ?? "");
 }
 
-export function recordTiming(path: string, serverMs: number | null, totalMs: number, cached = false) {
-  latest.set(path, { path, serverMs, totalMs, cached });
+export function recordTiming(path: string, serverMs: number | null, totalMs: number, header: string | null = null) {
+  const db = parseDbTiming(header);
+  latest.set(path, { path, serverMs, totalMs, cached: parseCacheHit(header), dbMs: db?.dbMs ?? null, queries: db?.queries ?? null });
   snapshot = [...latest.values()];
   listeners.forEach((listener) => listener());
 }

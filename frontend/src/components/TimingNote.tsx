@@ -18,13 +18,14 @@ export function TimingNote({ prefix }: { prefix: string }) {
       <div className="table-wrap" tabIndex={0}>
         <table>
           <thead>
-            <tr><th scope="col">View</th><th scope="col" className="num">Server</th><th scope="col" className="num">Round trip</th><th scope="col" className="num">Network and wait</th></tr>
+            <tr><th scope="col">View</th><th scope="col" className="num">Server</th><th scope="col" className="num">Of which database</th><th scope="col" className="num">Round trip</th><th scope="col" className="num">Network and wait</th></tr>
           </thead>
           <tbody>
             {timings.map((t) => (
               <tr key={t.path}>
                 <td>{t.path.replace(prefix, "") || t.path}</td>
                 <td className="num">{ms(t.serverMs)}{t.cached && " (cached)"}</td>
+                <td className="num">{t.dbMs === null ? "—" : `${ms(t.dbMs)} (${t.queries} queries)`}</td>
                 <td className="num">{ms(t.totalMs)}</td>
                 <td className="num">{t.serverMs === null ? "—" : ms(Math.max(0, t.totalMs - t.serverMs))}</td>
               </tr>
@@ -32,7 +33,7 @@ export function TimingNote({ prefix }: { prefix: string }) {
           </tbody>
         </table>
       </div>
-      <p>Round trip includes the network and, on a free hosted tier, waiting for an idle service to wake up. Server time does not. "Cached" means the server reused a recent identical answer instead of recomputing it.</p>
+      <p>Round trip includes the network and, on a free hosted tier, waiting for an idle service to wake up. Server time does not. Server time not spent in the database is Python work or waiting for a free connection or CPU. "Cached" means the server reused a recent identical answer instead of recomputing it.</p>
     </details>
   );
 }

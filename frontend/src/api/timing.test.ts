@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseCacheHit, parseServerTiming } from "./timing";
+import { parseCacheHit, parseDbTiming, parseServerTiming } from "./timing";
 
 describe("Server-Timing header", () => {
   it("reads the app duration", () => {
@@ -17,5 +17,12 @@ describe("cache hit", () => {
     expect(parseCacheHit('app;dur=0.4, cache;desc="hit"')).toBe(true);
     expect(parseCacheHit('app;dur=900, cache;desc="miss"')).toBe(false);
     expect(parseCacheHit(null)).toBe(false);
+  });
+});
+
+describe("database timing", () => {
+  it("reads database time and query count", () => {
+    expect(parseDbTiming('app;dur=900, db;dur=850.5;desc="7 queries, slowest 400 ms", cache;desc="miss"')).toEqual({ dbMs: 850.5, queries: 7 });
+    expect(parseDbTiming("app;dur=1")).toBeNull();
   });
 });

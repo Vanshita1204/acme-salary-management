@@ -457,3 +457,10 @@ def test_responses_report_server_time(client):
     name, _, value = response.headers["server-timing"].partition(";dur=")
     assert name == "app"
     assert float(value) >= 0
+
+
+def test_server_timing_reports_database_work(client, catalog):
+    response = client.get("/compensation-types")
+
+    assert 'db;dur=' in response.headers["server-timing"]
+    assert " queries, slowest " in response.headers["server-timing"]

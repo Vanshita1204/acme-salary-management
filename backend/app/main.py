@@ -17,6 +17,7 @@ from app.api import (
 )
 from app.core.cache import CachedResponse, ResponseCache
 from app.core.config import get_settings
+from app.db.session import QueryStats, query_stats
 from app.services.errors import ServiceError
 
 app = FastAPI(title="ACME Salary Management")
@@ -51,6 +52,8 @@ async def timing_and_cache(request: Request, call_next):
         return response
 
     version = response_cache.version
+    stats = QueryStats()
+    query_stats.set(stats)
     response = await call_next(request)
     if cacheable and response.status_code == 200:
         body = b"".join([chunk async for chunk in response.body_iterator])
@@ -58,11 +61,15 @@ async def timing_and_cache(request: Request, call_next):
             key, CachedResponse(200, dict(response.headers), body), version
         )
         response = Response(body, response.status_code, dict(response.headers))
-    response.headers["Server-Timing"] = (
-        f'app;dur={elapsed_ms():.1f}, cache;desc="miss"'
-        if cacheable
-        else f"app;dur={elapsed_ms():.1f}"
-    )
+    timing = f"app;dur={elapsed_ms():.1f}"
+    if stats.count:
+        timing += (
+            f', db;dur={stats.total_ms:.1f};desc="{stats.count} queries, '
+            f'slowest {stats.slowest_ms:.0f} ms"'
+        )
+    if cacheable:
+        timing += ', cache;desc="miss"'
+    response.headers["Server-Timing"] = timing
     return response
 
 

@@ -31,10 +31,10 @@ Tests: `cd backend && pytest` (uses its own `<db>_test` database and never touch
 
 | Suite | Tests | Result | Time | Coverage |
 | --- | --- | --- | --- | --- |
-| Backend (pytest) | 539 | all passed | ~25–38 s | 93% of `app/` (`pytest --cov=app`) |
-| Frontend (vitest) | 81 (10 files) | all passed | ~3 s | not measured |
+| Backend (pytest) | 579 | all passed | ~25–38 s | 93% of `app/` (`pytest --cov=app`) |
+| Frontend (vitest) | 88 (11 files) | all passed | ~3 s | not measured |
 
-Run on 2026-10-10. The backend suite includes unit tests for the pure domain layer and integration tests against a real Postgres, so the database must be running (`docker compose up -d db`).
+Run on 2026-10-15 (coverage figure from 2026-10-10). The backend suite includes unit tests for the pure domain layer and integration tests against a real Postgres, so the database must be running (`docker compose up -d db`).
 
 ## Deploy
 
@@ -42,7 +42,7 @@ One container serves the built frontend and the API (the API under `/api`), so t
 
 **On Render (free tier):** New → Blueprint → pick this repo. `render.yaml` creates the web service from the `Dockerfile` and a managed Postgres, and sets `DATABASE_URL` from it.
 
-**Anywhere else:** build the `Dockerfile` and run it with `DATABASE_URL` pointing at a Postgres 16 database (`postgres://…` URLs are accepted). Optional: `EXCHANGE_RATE_API_URL` (defaults to open.er-api.com), `PORT`.
+**Anywhere else:** build the `Dockerfile` and run it with `DATABASE_URL` pointing at a Postgres 16 database (`postgres://…` URLs are accepted). Optional: `EXCHANGE_RATE_API_URL` (defaults to open.er-api.com), `PORT`, `ANALYTICS_CACHE_SECONDS` (default 300; `0` turns the pay-insight cache off).
 
 On every start the container runs `python -m app.bootstrap`, then the daily job in the background, then the server:
 
@@ -58,3 +58,23 @@ The daily job (00:10 UTC) refreshes exchange rates and makes future-dated pay ch
 **Optional hardening:** create a role that can only read and insert compensation records (`APP_DB_PASSWORD=… python -m app.db.grants acme_app`) and set `RUNTIME_DATABASE_URL` to it. Migrations keep using `DATABASE_URL`. Managed Postgres plans that don't allow creating roles skip this; the database triggers still block changes to history.
 
 There is no login: the app is open to anyone with the URL, which is acceptable for a demo on synthetic data only (see Future Roadmap in `docs/SPECIFICATION.md`).
+
+## Performance on the hosted instance
+
+The Pay insights page is noticeably slower on the live app than on a laptop, and the evidence points to the hosting, not the data size or the queries themselves. On Render's free tier the web service and the database share a small slice of CPU, and the service is spun down when idle, so the first request after a pause waits for it to wake up (30–60 s).
+
+Measured on the same 10,000 employees:
+
+| | Locally | Render free tier |
+| --- | --- | --- |
+| Directory page (`GET /employees`) | tens of ms | 40–120 ms |
+| One pay-insight view, first load | 80–200 ms | 1.4–3 s one at a time; 5–11 s when the page requests them together |
+
+The directory stays well inside the 500 ms target (`docs/PERFORMANCE.md`). The pay insights scan every active employee's current pay, which is what the shared CPU is slow at. To keep the page usable:
+
+- **Server time is shown on the page.** Expand the note at the bottom of Pay insights: for each view it shows the server's time (request received to response sent, from the `Server-Timing` header), how much of that was database time and how many queries ran, the browser's round trip, and whether the answer was cached. The gap between the last two is network and waiting.
+- **Answers are cached for 5 minutes.** An identical pay-insight request is served from memory until something is written through the API or the time limit passes. Changes made by the daily job can take up to 5 minutes to show. This is per process, which is enough for one instance; several instances would need a shared cache.
+- **Views load as you scroll.** Only the first two load straight away; the rest load when you scroll near them, so the page doesn't ask for everything at once.
+- **Summary figures are computed in one query,** not one per breakdown.
+
+After the first load of a given filter combination, repeat requests are answered from the cache in milliseconds. The first load of each combination is still slow on the free tier.
