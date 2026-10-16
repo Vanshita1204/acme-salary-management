@@ -2,7 +2,7 @@
 
 HR tool to find any employee, see their full compensation history, record changes without ever overwriting the past, and answer pay questions across countries and currencies.
 
-> **Live app:**  <https://acme-salary-management-ee70.onrender.com/> · **Demo video:** _add the link_
+> **Live app:**  <https://acme-salary-management-ee70.onrender.com/> · **Demo video:** <https://www.loom.com/share/254f5132ef4848a1b8cb41a2f25f27e5>
 
 ## What's here
 
