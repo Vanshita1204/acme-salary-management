@@ -603,6 +603,45 @@ Everything else together is **under 1.5%**. The next statements down: the direct
 
 ---
 
+## E16 — The pay-changes report on narrow date ranges (negative result)
+
+E15 found the pay-changes report is half of all database time, at 25.8 s per call even for a one-month range. E11 had tried limiting its history window to employees with an event, but only on the one-year range (where nearly everyone has an event) and it was slower. This asks whether that idea works when few employees have changed. Code was restored afterwards; this section records what was learned.
+
+**Baseline** (`acme_lab_1m`, in-process, fresh session, one run each):
+
+| Range | Time | Employees with a change | Events |
+| --- | --- | --- | --- |
+| 1 week | 1.6 s | 0 | 0 |
+| 1 month | 26.9 s | 109,769 | 109,769 |
+| 1 quarter | 28.2 s | 146,292 | 148,282 |
+| 1 year | 45.4 s | 862,938 | 1,988,176 |
+
+The cost has a floor of about 25 s that barely depends on the range, because the report windows over every compensation record (15.9 M rows) to find when each record stopped applying.
+
+**Hypothesis (formed from the E15 finding, before the variants were timed; the factors are my estimate from the share of employees involved):** restricting that window to the employees who have an event in the range makes a month about **5× faster** (11% of employees), a quarter about 4×, and does not help a year (everyone is involved).
+
+**Tried:** the same report with `events` as a CTE and the records restricted (a) with `IN (select employee_id from events)` and (b) with a join to the distinct employees of the events.
+
+| Range | Original | `IN` on a CTE | Join on a CTE |
+| --- | --- | --- | --- |
+| 1 month | 26.9 s | 19.1 s | 19.9 s |
+| 1 quarter | 28.2 s | 26.1 s | 23.9 s |
+| 1 year | 45.4 s | **125.1 s** | **96.1 s** |
+
+**Verdict: refuted.** The gain for a month is **1.4×**, not 5×, and the year gets **2–3× slower**. The plan explains why: the restricted history is 3.6 M rows instead of 15.9 M, but fetching it is a nested loop of one index lookup per employee (110 k lookups into a 2.9 GB table, 10.9 s), then a sort of 3.6 M rows (2.4 s) and a window (1.2 s). Forcing hash joins (`enable_nestloop = off, enable_mergejoin = off`) reached 14 s for the month, still far from the 5× hoped for. On the wide range the planner's choices are worse still.
+
+**Other things that did not work:** disabling the merge join on the year (50 s, from E11).
+
+**What would work** (not built; the options and their costs):
+
+1. **A stored change log, as a materialized view or a table of events** (employee, day, before total, after total, currency, reasons), built once over all history and read by date range. The report would take milliseconds. The price: building it windows over all history (probably 30–60 s at 1M employees), so it could only be refreshed rarely (daily), and events from today would be missing until then; or it must be maintained on every pay write, which means reproducing the report's rules (corrections, relocations, same-day records) in write code.
+2. **Running totals from deltas** instead of a range join: still reads all history, but could avoid the 41 M-pair join. A rewrite of the report's logic with real risk of changing results.
+3. **Accept it:** the report is infrequent, takes about 25 s at 1M employees and about 0.4 s at the 10,000 the brief asks for, and the response cache makes a repeated request free.
+
+**Recommendation:** accept for now (option 3), and revisit with option 1 if the report matters at scale.
+
+---
+
 ## Summary — what the lab confirmed or changed
 
 | Decision | Status | Evidence |
@@ -625,3 +664,4 @@ Everything else together is **under 1.5%**. The next statements down: the direct
 | Postgres settings for the local database | **Changed** (`shm_size` 512 MB, `shared_buffers` 1 GB) | E14: 503 errors under concurrent load gone (42 to 0); directory +10-20% throughput; views and `work_mem` unchanged |
 | Directory total count (exact `count(*)`) | **Kept exact** | E15: 0.2-0.7% of database time in a realistic mix; pay insights are 98.8% |
 | Where database time goes | Recorded | E15: pay-changes report 49%, per-view currency count 11%, the six other pay-insight statements 4-11% each |
+| Pay-changes report on narrow date ranges | **Not changed** (restricting the history window refuted) | E16: month 1.4× faster but year 2-3× slower; real fix is a stored change log; accepted for now |
