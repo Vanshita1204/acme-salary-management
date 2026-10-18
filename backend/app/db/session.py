@@ -11,7 +11,14 @@ from app.core.config import get_settings
 _settings = get_settings()
 # pool_pre_ping: test a pooled connection before using it, so after a database restart the
 # first request replaces the dead connection instead of failing.
-engine = create_engine(_settings.runtime_database_url or _settings.database_url, future=True, pool_pre_ping=True)
+engine = create_engine(
+    _settings.runtime_database_url or _settings.database_url,
+    future=True,
+    pool_pre_ping=True,
+    pool_size=_settings.db_pool_size,
+    max_overflow=_settings.db_max_overflow,
+    pool_timeout=_settings.db_pool_timeout,
+)
 
 
 @dataclass

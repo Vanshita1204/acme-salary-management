@@ -13,6 +13,11 @@ class Settings(BaseSettings):
     # Latest-rates endpoint returning units of each currency per 1 USD (open.er-api.com format).
     exchange_rate_api_url: str = "https://open.er-api.com/v6/latest/USD"
     environment: str = "development"
+    # Connection pool for the API (SQLAlchemy's defaults). The pool serves at most
+    # pool_size + max_overflow requests at once; the rest wait up to pool_timeout seconds.
+    db_pool_size: int = 5
+    db_max_overflow: int = 10
+    db_pool_timeout: float = 30
     # How long an identical pay-insight request is answered from memory (0 turns it off).
     analytics_cache_seconds: float = 300
 

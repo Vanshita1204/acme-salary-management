@@ -1,0 +1,4 @@
+[15:51:16] acme_lab_1m: schema + reference data: 4.0s
+[16:28:55] acme_lab_1m: seeded 1,000,000 employees with copy in 1003.0s
+[16:28:58] acme_lab_1m: ANALYZE: 2.4s
+[16:28:58] acme_lab_1m: {'employees': {'rows': 1000000, 'size': '406 MB'}, 'compensation_records': {'rows': 17746929, 'size': '2916 MB'}, 'current_compensation': {'rows': 4339171, 'size': '567 MB'}}

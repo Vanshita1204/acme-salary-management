@@ -236,6 +236,74 @@ M, 17.76 M records, yearly partitions. Median ms:
 
 ---
 
+## E9 — Concurrency and connection pooling
+
+Run on a **new 1M-employee lab database** (`acme_lab_1m`: 1,000,000 employees, 17.7 M compensation records, built with `COPY` in 1,003 s on the current schema and the 8 Acme entities), on the Apple Silicon Mac used for E1–E3. The server is the real one (`uvicorn`, its own process), the response cache is **off**, and clients are closed-loop: N clients each send requests back to back. `python -m scale_lab.e9_concurrency` (`backend/scale_lab/e9_concurrency.py`).
+
+**Hypotheses (written before running):**
+
+1. **Directory requests** (index-backed, a few ms each at 1M) are limited by the Python process, not the database: one uvicorn worker, sync endpoints in a thread pool, one GIL. Throughput will plateau at a low client count, and latency will then grow in proportion to the clients (Little's law).
+2. **Pool size is not the bottleneck.** The default pool serves 15 requests at once (5 + 10 overflow). Above 15 clients, requests wait for a connection, adding latency, but throughput stays flat; raising the pool size alone will not raise throughput.
+3. **Pay-insight views** (seconds each at 1M) are limited by database CPU. Throughput will stay roughly flat as clients rise past the number of cores, and latency grows in proportion.
+4. **More workers** will raise directory throughput, up to about the core count, and will not help the analytics views.
+
+**Setup:** Postgres 16 in Docker (10 CPUs, 8 GB, `shared_buffers` 128 MB, `max_parallel_workers_per_gather` 2, `/dev/shm` 64 MB), uvicorn with 1 worker and SQLAlchemy's default pool (5 + 10) unless stated. Directory workload: first page, search, department + country filter, hire-date sort. Heavy workload: the pay-insight views and a directory page sorted by pay. Each level ran 15 s (directory) or 60 s (heavy) after a warm-up; one run per setting. Raw numbers: `scale_lab/results/e9_concurrency_*.json`.
+
+**Baseline, directory workload** (1M employees, cache off):
+
+| Clients | Requests/s | p50 | p95 | p99 | Errors |
+| --- | --- | --- | --- | --- | --- |
+| 1 | 3.2 | 202 ms | 680 ms | 711 ms | 0 |
+| 5 | 11.3 | 244 ms | 1,101 ms | 2,021 ms | 0 |
+| 10 | 13.0 | 425 ms | 2,452 ms | 3,309 ms | 0 |
+| 20 | 14.0 | 830 ms | 4,255 ms | 4,761 ms | 0 |
+| 50 | 13.4 | 3,111 ms | 6,183 ms | 7,436 ms | 0 |
+
+Throughput stops rising at about **13 requests/s from 5–10 clients**; past that, latency grows in step with the number of clients (50 clients / 13.4 req/s = 3.7 s). A single client already sees 200 ms per request, not the few ms the page query alone costs: the "total matching" count (`SELECT count(*)` over 1M employees, a parallel index-only scan, **60 ms** alone) runs on every request.
+
+**Baseline, heavy workload:**
+
+| Clients | Requests/s | p50 | p95 | Errors |
+| --- | --- | --- | --- | --- |
+| 1 | 0.1 | 8.1 s | 42.3 s | 0 |
+| 2 | 0.1 | 9.3 s | 38.1 s | 0 |
+| 4 | 0.2 | 8.7 s | 41.6 s | 0 |
+| 8 | 0.3 | 14.3 s | 61.4 s | 0 |
+| 16 | 0.4 | 22.9 s | 68.5 s | 1 |
+
+One client, per view: pay-sorted directory page 2.8 s, summary 8.6 s, stats by department 7.5 s, composition 7.5 s, histogram 10.2 s, **outliers 42.3 s**.
+
+**Where the time goes.** During a 10-client directory run the Python server used **12.8% of one core** and the Postgres container **1,000% (all 10 cores)**.
+
+**Directory at 50 clients, with the setting changed:**
+
+| Setting | Requests/s (5 / 10 / 20 / 50 clients) | p95 at 50 | Errors at 50 |
+| --- | --- | --- | --- |
+| 1 worker, pool 5 + 10 (baseline) | 11.3 / 13.0 / 14.0 / 13.4 | 6.2 s | 0 |
+| 4 workers (pool 5 + 10 each) | 13.8 / 12.8 / 13.1 / 12.7 to 13.5 | 11.1–12.3 s | 6–10 (HTTP 503) |
+| 1 worker, pool 50 + 0 | n/a / 12.4 / 13.5 / 13.5 to 14.6 | 9.8–10.2 s | 8–15 (HTTP 503) |
+
+(The 50-client cases were run twice; ranges show both runs.)
+
+**Verdicts:**
+
+1. **Refuted.** The directory is not limited by the Python process: the server used 13% of a core while the database used all ten. The plateau and the linear growth of latency are as predicted, but the cause is the database.
+2. **Confirmed.** With 50 clients and a pool of 15, no request failed from waiting for a connection, and a pool of 50 gave no more throughput (12.4–14.6 req/s against 13.4).
+3. **Partly confirmed.** The views do not run one at a time: throughput rose from 0.1 to 0.4 req/s as clients went from 1 to 16, so the database uses several cores for them, flattening at around 8 clients. Latency grows in proportion beyond that.
+4. **Refuted for the directory.** Four workers gave the same ~13 req/s, because the limit is the database. (Not measured: the analytics workload with more workers; it is database-bound too.)
+
+**Unexpected: errors at 50 clients.** Runs with 4 workers or a 50-connection pool returned HTTP 503 on 6–15 requests. Postgres's log shows `could not resize shared memory segment … No space left on device`: parallel queries (each Gather node uses dynamic shared memory) run out of the container's small `/dev/shm` when many run at once. More connections made it *worse* because more parallel queries ran at the same time. It is a Docker default (`/dev/shm` of 64 MB), not an application bug, but it means "more connections or workers" can turn slow into failing.
+
+**Conclusions so far:**
+
+- Adding workers or connections does nothing while the database is the bottleneck, and can cause errors. The fix has to reduce database work per request.
+- The biggest per-request costs at 1M employees are the exact `count(*)` on every directory call and the whole-population analytics queries (outliers 42 s).
+- The pool and worker count are worth tuning only after the queries are cheaper.
+
+**Next:** E10, the cost of the exact total count on every directory request (options: cached counts, estimated counts, skipping the total when unfiltered); then the analytics queries (outliers first).
+
+---
+
 ## Summary — what the lab confirmed or changed
 
 | Decision | Status | Evidence |
@@ -250,3 +318,4 @@ M, 17.76 M records, yearly partitions. Median ms:
 | In-memory CSV import with a 10,000-row cap | Confirmed as a cap | E6: staging + SQL scales linearly with flat memory, only 1.8–2.5× faster |
 | The 11 secondary indexes | Confirmed | E7: all vs essential +3.7% load time; no indexes = 4.4× slower load |
 | Partition compensation records by date | Rejected for now | E8: reports 2.2–3.7× faster, lookups 1.6–3.5× slower, `id` can't stay unique |
+| Pool size and worker count for the directory | No change needed | E9: workers 1 → 4 and pool 15 → 50 gave the same ~13 req/s; the database is the bottleneck. More connections caused 503s from shared-memory exhaustion (fixed in E14) |

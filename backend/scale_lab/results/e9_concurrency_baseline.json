@@ -1,0 +1,410 @@
+{
+  "environment": {
+    "machine": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "cpu_count": 10,
+    "memory_gb": 16,
+    "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "163848kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-16T11:10:22+00:00"
+  },
+  "database": "acme_lab_1m",
+  "config": {
+    "workers": 1,
+    "pool_size": 5,
+    "max_overflow": 10,
+    "duration_s": 15,
+    "analytics_duration_s": 60,
+    "cache": "off"
+  },
+  "results": {
+    "directory": [
+      {
+        "clients": 1,
+        "requests": 50,
+        "errors": 0,
+        "throughput_rps": 3.2,
+        "p50_ms": 201.8,
+        "p95_ms": 680.1,
+        "p99_ms": 711.3,
+        "max_ms": 711.3,
+        "server_p50_ms": 200.2,
+        "by_request": {
+          "first page": {
+            "n": 13,
+            "p50_ms": 162.4,
+            "p95_ms": 372.3
+          },
+          "search": {
+            "n": 13,
+            "p50_ms": 657.2,
+            "p95_ms": 711.3
+          },
+          "filtered by department and country": {
+            "n": 12,
+            "p50_ms": 214.5,
+            "p95_ms": 310.5
+          },
+          "by hire date": {
+            "n": 12,
+            "p50_ms": 162.7,
+            "p95_ms": 202.3
+          }
+        }
+      },
+      {
+        "clients": 5,
+        "requests": 184,
+        "errors": 0,
+        "throughput_rps": 11.3,
+        "p50_ms": 243.7,
+        "p95_ms": 1100.7,
+        "p99_ms": 2020.7,
+        "max_ms": 2067.4,
+        "server_p50_ms": 242.7,
+        "by_request": {
+          "first page": {
+            "n": 47,
+            "p50_ms": 190.8,
+            "p95_ms": 270.0
+          },
+          "search": {
+            "n": 47,
+            "p50_ms": 910.5,
+            "p95_ms": 1726.3
+          },
+          "filtered by department and country": {
+            "n": 45,
+            "p50_ms": 261.0,
+            "p95_ms": 438.9
+          },
+          "by hire date": {
+            "n": 45,
+            "p50_ms": 196.5,
+            "p95_ms": 355.9
+          }
+        }
+      },
+      {
+        "clients": 10,
+        "requests": 210,
+        "errors": 0,
+        "throughput_rps": 13.0,
+        "p50_ms": 425.3,
+        "p95_ms": 2451.9,
+        "p99_ms": 3309.1,
+        "max_ms": 3486.4,
+        "server_p50_ms": 424.2,
+        "by_request": {
+          "first page": {
+            "n": 53,
+            "p50_ms": 357.5,
+            "p95_ms": 547.3
+          },
+          "search": {
+            "n": 55,
+            "p50_ms": 1484.4,
+            "p95_ms": 3309.1
+          },
+          "filtered by department and country": {
+            "n": 51,
+            "p50_ms": 405.1,
+            "p95_ms": 583.7
+          },
+          "by hire date": {
+            "n": 51,
+            "p50_ms": 352.5,
+            "p95_ms": 585.8
+          }
+        }
+      },
+      {
+        "clients": 20,
+        "requests": 242,
+        "errors": 0,
+        "throughput_rps": 14.0,
+        "p50_ms": 830.0,
+        "p95_ms": 4255.1,
+        "p99_ms": 4760.7,
+        "max_ms": 4947.6,
+        "server_p50_ms": 828.2,
+        "by_request": {
+          "first page": {
+            "n": 63,
+            "p50_ms": 731.4,
+            "p95_ms": 1039.2
+          },
+          "search": {
+            "n": 63,
+            "p50_ms": 2578.5,
+            "p95_ms": 4710.7
+          },
+          "filtered by department and country": {
+            "n": 57,
+            "p50_ms": 770.9,
+            "p95_ms": 1294.8
+          },
+          "by hire date": {
+            "n": 59,
+            "p50_ms": 728.3,
+            "p95_ms": 1210.7
+          }
+        }
+      },
+      {
+        "clients": 50,
+        "requests": 269,
+        "errors": 0,
+        "throughput_rps": 13.4,
+        "p50_ms": 3110.5,
+        "p95_ms": 6183.1,
+        "p99_ms": 7435.8,
+        "max_ms": 8652.9,
+        "server_p50_ms": 3109.1,
+        "by_request": {
+          "first page": {
+            "n": 67,
+            "p50_ms": 2790.1,
+            "p95_ms": 3703.4
+          },
+          "search": {
+            "n": 73,
+            "p50_ms": 4789.8,
+            "p95_ms": 7309.6
+          },
+          "filtered by department and country": {
+            "n": 63,
+            "p50_ms": 2943.4,
+            "p95_ms": 3948.7
+          },
+          "by hire date": {
+            "n": 66,
+            "p50_ms": 2800.5,
+            "p95_ms": 3725.7
+          }
+        }
+      }
+    ],
+    "analytics": [
+      {
+        "clients": 1,
+        "requests": 6,
+        "errors": 0,
+        "throughput_rps": 0.1,
+        "p50_ms": 8071.7,
+        "p95_ms": 42330.9,
+        "p99_ms": 42330.9,
+        "max_ms": 42330.9,
+        "server_p50_ms": 8069.4,
+        "by_request": {
+          "directory sorted by pay": {
+            "n": 1,
+            "p50_ms": 2778.9,
+            "p95_ms": 2778.9
+          },
+          "summary": {
+            "n": 1,
+            "p50_ms": 8610.6,
+            "p95_ms": 8610.6
+          },
+          "stats by department": {
+            "n": 1,
+            "p50_ms": 7513.6,
+            "p95_ms": 7513.6
+          },
+          "composition": {
+            "n": 1,
+            "p50_ms": 7532.9,
+            "p95_ms": 7532.9
+          },
+          "histogram": {
+            "n": 1,
+            "p50_ms": 10200.4,
+            "p95_ms": 10200.4
+          },
+          "outliers": {
+            "n": 1,
+            "p50_ms": 42330.9,
+            "p95_ms": 42330.9
+          }
+        }
+      },
+      {
+        "clients": 2,
+        "requests": 11,
+        "errors": 0,
+        "throughput_rps": 0.1,
+        "p50_ms": 9340.1,
+        "p95_ms": 38115.6,
+        "p99_ms": 38115.6,
+        "max_ms": 38115.6,
+        "server_p50_ms": 9336.0,
+        "by_request": {
+          "directory sorted by pay": {
+            "n": 1,
+            "p50_ms": 3386.4,
+            "p95_ms": 3386.4
+          },
+          "summary": {
+            "n": 2,
+            "p50_ms": 9388.6,
+            "p95_ms": 9437.0
+          },
+          "stats by department": {
+            "n": 2,
+            "p50_ms": 8709.8,
+            "p95_ms": 9030.2
+          },
+          "composition": {
+            "n": 2,
+            "p50_ms": 7759.5,
+            "p95_ms": 7865.7
+          },
+          "histogram": {
+            "n": 2,
+            "p50_ms": 10418.5,
+            "p95_ms": 10520.7
+          },
+          "outliers": {
+            "n": 2,
+            "p50_ms": 37941.1,
+            "p95_ms": 38115.6
+          }
+        }
+      },
+      {
+        "clients": 4,
+        "requests": 18,
+        "errors": 0,
+        "throughput_rps": 0.2,
+        "p50_ms": 8721.3,
+        "p95_ms": 41562.9,
+        "p99_ms": 41562.9,
+        "max_ms": 41562.9,
+        "server_p50_ms": 8719.2,
+        "by_request": {
+          "directory sorted by pay": {
+            "n": 1,
+            "p50_ms": 3040.2,
+            "p95_ms": 3040.2
+          },
+          "summary": {
+            "n": 2,
+            "p50_ms": 8721.3,
+            "p95_ms": 8793.0
+          },
+          "stats by department": {
+            "n": 3,
+            "p50_ms": 8518.8,
+            "p95_ms": 8570.9
+          },
+          "composition": {
+            "n": 4,
+            "p50_ms": 7898.2,
+            "p95_ms": 8249.9
+          },
+          "histogram": {
+            "n": 4,
+            "p50_ms": 11273.7,
+            "p95_ms": 11880.2
+          },
+          "outliers": {
+            "n": 4,
+            "p50_ms": 39646.8,
+            "p95_ms": 41562.9
+          }
+        }
+      },
+      {
+        "clients": 8,
+        "requests": 31,
+        "errors": 0,
+        "throughput_rps": 0.3,
+        "p50_ms": 14318.5,
+        "p95_ms": 61387.2,
+        "p99_ms": 67163.4,
+        "max_ms": 67163.4,
+        "server_p50_ms": 14316.9,
+        "by_request": {
+          "directory sorted by pay": {
+            "n": 2,
+            "p50_ms": 4944.8,
+            "p95_ms": 4991.3
+          },
+          "summary": {
+            "n": 4,
+            "p50_ms": 12162.3,
+            "p95_ms": 12654.5
+          },
+          "stats by department": {
+            "n": 5,
+            "p50_ms": 12896.8,
+            "p95_ms": 14318.5
+          },
+          "composition": {
+            "n": 6,
+            "p50_ms": 13705.6,
+            "p95_ms": 14491.2
+          },
+          "histogram": {
+            "n": 7,
+            "p50_ms": 16424.6,
+            "p95_ms": 19670.9
+          },
+          "outliers": {
+            "n": 7,
+            "p50_ms": 45462.3,
+            "p95_ms": 67163.4
+          }
+        }
+      },
+      {
+        "clients": 16,
+        "requests": 43,
+        "errors": 1,
+        "throughput_rps": 0.4,
+        "p50_ms": 22881.9,
+        "p95_ms": 68491.4,
+        "p99_ms": 89924.8,
+        "max_ms": 89924.8,
+        "server_p50_ms": 22879.6,
+        "by_request": {
+          "directory sorted by pay": {
+            "n": 3,
+            "p50_ms": 7673.3,
+            "p95_ms": 7685.1
+          },
+          "summary": {
+            "n": 6,
+            "p50_ms": 22045.0,
+            "p95_ms": 31429.8
+          },
+          "stats by department": {
+            "n": 9,
+            "p50_ms": 21844.1,
+            "p95_ms": 22622.9
+          },
+          "composition": {
+            "n": 10,
+            "p50_ms": 22004.3,
+            "p95_ms": 27755.4
+          },
+          "histogram": {
+            "n": 8,
+            "p50_ms": 27232.1,
+            "p95_ms": 34204.2
+          },
+          "outliers": {
+            "n": 6,
+            "p50_ms": 68359.9,
+            "p95_ms": 89924.8
+          }
+        }
+      }
+    ]
+  }
+}
