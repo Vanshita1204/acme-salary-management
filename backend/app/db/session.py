@@ -11,10 +11,15 @@ from app.core.config import get_settings
 _settings = get_settings()
 # pool_pre_ping: test a pooled connection before using it, so after a database restart the
 # first request replaces the dead connection instead of failing.
+# prepare_threshold=None: psycopg 3 otherwise prepares a statement after 5 uses, and Postgres
+# can then switch to a generic plan that doesn't know the parameter values. That took the
+# future-dated promotion that runs on every read from 1.4 ms to over 150 ms after about ten
+# requests on a connection (Scale Lab E4, E10).
 engine = create_engine(
     _settings.runtime_database_url or _settings.database_url,
     future=True,
     pool_pre_ping=True,
+    connect_args={"prepare_threshold": None},
     pool_size=_settings.db_pool_size,
     max_overflow=_settings.db_max_overflow,
     pool_timeout=_settings.db_pool_timeout,

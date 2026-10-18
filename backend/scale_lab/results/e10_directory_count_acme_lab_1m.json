@@ -1,0 +1,131 @@
+{
+  "environment": {
+    "machine": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "cpu_count": 10,
+    "memory_gb": 16,
+    "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "163848kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-17T18:14:17+00:00"
+  },
+  "requests": {
+    "no filter": {
+      "matches": 1000000,
+      "whole_request_ms": 44.13,
+      "exact_total_ms": 31.01,
+      "page_query_ms": 2.05,
+      "promote_ms": 2.49,
+      "count_before_deep_ms": 115.5,
+      "capped": {
+        "ms": 1.39,
+        "value": 10001,
+        "shown": "10,000+"
+      },
+      "planner_estimate": {
+        "ms": 0.86,
+        "value": 1000000,
+        "ratio_to_exact": 1.0
+      }
+    },
+    "status = active": {
+      "matches": 862938,
+      "whole_request_ms": 40.88,
+      "exact_total_ms": 31.0,
+      "page_query_ms": 2.47,
+      "promote_ms": 2.3,
+      "count_before_deep_ms": 121.79,
+      "capped": {
+        "ms": 1.51,
+        "value": 10001,
+        "shown": "10,000+"
+      },
+      "planner_estimate": {
+        "ms": 1.16,
+        "value": 863267,
+        "ratio_to_exact": 1.0
+      }
+    },
+    "department": {
+      "matches": 340181,
+      "whole_request_ms": 29.51,
+      "exact_total_ms": 17.05,
+      "page_query_ms": 2.18,
+      "promote_ms": 2.21,
+      "count_before_deep_ms": 82.89,
+      "capped": {
+        "ms": 1.56,
+        "value": 10001,
+        "shown": "10,000+"
+      },
+      "planner_estimate": {
+        "ms": 1.25,
+        "value": 342167,
+        "ratio_to_exact": 1.01
+      }
+    },
+    "department + country": {
+      "matches": 102855,
+      "whole_request_ms": 78.27,
+      "exact_total_ms": 89.36,
+      "page_query_ms": 2.93,
+      "promote_ms": 3.29,
+      "count_before_deep_ms": null,
+      "capped": {
+        "ms": 14.5,
+        "value": 10001,
+        "shown": "10,000+"
+      },
+      "planner_estimate": {
+        "ms": 1.37,
+        "value": 104247,
+        "ratio_to_exact": 1.01
+      }
+    },
+    "search 'an' (common)": {
+      "matches": 311011,
+      "whole_request_ms": 524.84,
+      "exact_total_ms": 494.33,
+      "page_query_ms": 3.74,
+      "promote_ms": 2.24,
+      "count_before_deep_ms": 544.01,
+      "capped": {
+        "ms": 49.36,
+        "value": 10001,
+        "shown": "10,000+"
+      },
+      "planner_estimate": {
+        "ms": 1.23,
+        "value": 999935,
+        "ratio_to_exact": 3.22
+      }
+    },
+    "search 'zzzzq' (no match)": {
+      "matches": 0,
+      "whole_request_ms": 4268.21,
+      "exact_total_ms": 653.49,
+      "page_query_ms": 3726.88,
+      "promote_ms": 3.62,
+      "count_before_deep_ms": null,
+      "capped": {
+        "ms": 647.25,
+        "value": 0,
+        "shown": "0"
+      },
+      "planner_estimate": {
+        "ms": 1.66,
+        "value": 8279,
+        "ratio_to_exact": null
+      }
+    }
+  },
+  "alternatives": {
+    "table_statistics_estimate": {
+      "ms": 0.37,
+      "value": 1000000
+    }
+  }
+}

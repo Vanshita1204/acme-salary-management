@@ -304,6 +304,69 @@ One client, per view: pay-sorted directory page 2.8 s, summary 8.6 s, stats by d
 
 ---
 
+## E10 — The directory's total count
+
+E9 showed the directory is limited by database CPU, and that every request runs an exact `count(*)` for the "N employees match" figure (60 ms alone at 1M). A request with a cursor runs a second count (`count_before`) to say which row number the page starts at. This experiment times each part of a directory request at M (1M employees, `acme_lab_1m`), then compares cheaper ways of producing the total. `python -m scale_lab.e10_directory_count`.
+
+**Hypotheses (written before running):**
+
+1. For broad requests (no filter, a status filter, a department filter) the exact count is the **largest single cost** of the request at 1M; for selective filters it is negligible.
+2. A **capped count** (count at most 10,001 rows, then show "10,000+") costs a few ms whatever the match size, because it stops early.
+3. The **planner's row estimate** (`EXPLAIN`, no execution) takes under 2 ms but is **inaccurate** for combined filters and for text search (more than 2× off), and is exact enough only for a single indexed filter.
+4. `count_before` on a **deep page** costs about as much as the exact total, so paging deep stays proportional to the table size even with keyset pagination.
+
+**Where a directory request's time goes** (1M employees, per SQL statement, a fresh connection; no filter and a common search):
+
+| Statement | No filter | Search "an" |
+| --- | --- | --- |
+| Reporting-currency check | 0.6 ms | 0.7 ms |
+| Promote due future-dated records | 1.4 ms | 1.2 ms |
+| Page of 51 employees | 1.3 ms | 2.3 ms |
+| Latest exchange rates | 0.5 ms | 0.7 ms |
+| Totals for the page | 0.9 ms | 1.0 ms |
+| **Exact `count(*)` of matches** | **28.3 ms** | **505.9 ms** |
+| Whole request | 38 ms | 522 ms |
+
+**A bigger finding: generic plans on a reused connection.** The same request repeated on **one connection** (as the app's pool does) cost 38 ms for ten requests, then jumped: request 11 took 203 ms, because the promotion statement went from **1.4 ms to 153 ms**. psycopg 3 prepares a statement after 5 uses, and Postgres then switches to a generic plan that can't use the partial index on future-dated records (the E4 effect, in the request path of every read). With `prepare_threshold=None` the promotion stayed at 1.3 ms through 24 requests. The setting is now applied in `app/db/session.py`.
+
+**E9 re-run after that change** (directory workload, 1M, 1 worker, default pool):
+
+| Clients | Requests/s before → after | p50 before → after | p95 before → after |
+| --- | --- | --- | --- |
+| 1 | 3.2 → 5.6 | 202 → 74 ms | 680 → 530 ms |
+| 5 | 11.3 → 15.6 | 244 → 120 ms | 1,101 → 1,003 ms |
+| 10 | 13.0 → 11.4 | 425 → 287 ms | 2,452 → 3,980 ms |
+| 20 | 14.0 → 10.6 | 830 → 916 ms | 4,255 → 6,390 ms |
+| 50 | 13.4 → 14.0 | 3,111 → 2,867 ms | 6,183 → 7,191 ms |
+
+Per request at one client (p50): first page 162 → 46 ms, department + country 215 → 76 ms, by hire date 163 → 48 ms, search 657 → 512 ms. Single-client latency improved 2–3.5×; **saturation throughput did not** (11–15 req/s), because the mix is now limited by the search request's count (about 500 ms of database CPU each). Throughput at 10–20 clients is within run-to-run noise of the baseline (one run each).
+
+**Count alternatives at 1M** (median of 5, in-process, warm):
+
+| Request | Matches | Exact count | Capped at 10,001 | Planner estimate (value) |
+| --- | --- | --- | --- | --- |
+| no filter | 1,000,000 | 29.4 ms | 1.1 ms | 0.6 ms (1,000,000) |
+| status = active | 862,938 | 26.5 ms | 1.7 ms | 1.0 ms (863,267) |
+| department | 340,181 | 16.7 ms | 1.3 ms | 0.7 ms (342,167) |
+| department + country | 102,855 | 108 ms* | 14.9 ms | 0.8 ms (104,247) |
+| search "an" | 311,011 | 492 ms | 48 ms | 1.5 ms (999,935) |
+| search, no match | 0 | 627 ms | 630 ms | 1.3 ms (8,279) |
+
+\*Noisy: this median exceeded the whole request's median (79 ms) in the same run. Unfiltered, the table-statistics estimate (`pg_class.reltuples`) takes 0.33 ms and is exact here. `count_before`, the start-of-page count for a page 300,000 rows in: 114 ms (no filter), 122 ms (active), 84 ms (department), 536 ms (search). A search with no match takes **4.1 s** as a whole request, of which 3.4 s is the page query itself (the ordered scan tests every row).
+
+**Verdicts:**
+
+1. **Confirmed for broad requests**, and for text search: the exact count is 74% of a no-filter request (28 of 38 ms) and 97% of a search request. For selective filters it was too noisy to say.
+2. **Confirmed, with a limit.** The capped count costs 1–2 ms for broad filters and 15–48 ms where the cap is reached through more rows. It does not help when there are few or no matches (630 ms for no match), because it still has to scan everything to find out.
+3. **Partly refuted.** The planner's estimate costs about 1 ms and is within **1.5% for indexed filters, including the department + country combination**, which I expected to be inaccurate. It is wrong for text search (3.2× too high) and cannot say "zero" (8,279 for no match).
+4. **Confirmed, and understated.** The start-of-page count for a deep page costs **3–4× the exact total** (114 ms against 29 ms), not "about as much".
+
+**Corrections to E9:** E9 attributed the 160–200 ms single-client request to the exact count. Most of it was the generic-plan promotion statement (about 100+ ms); the count is 28 ms for an unfiltered request. The E9 conclusion that the database is the bottleneck stands, and so does the finding that more workers and a larger pool do not help.
+
+**Not yet done:** replacing the exact count. A design that follows from the numbers: for structured filters use the planner estimate when it is above 10,000 ("about 340,000") and the exact count below that; for text search use the capped count ("10,000+"); and stop computing the start-of-page number for deep pages, or derive it more cheaply. That changes what the page shows, so it needs a decision before it is built. (Decided in E15: the exact count stays.)
+
+---
+
 ## Summary — what the lab confirmed or changed
 
 | Decision | Status | Evidence |
@@ -319,3 +382,4 @@ One client, per view: pay-sorted directory page 2.8 s, summary 8.6 s, stats by d
 | The 11 secondary indexes | Confirmed | E7: all vs essential +3.7% load time; no indexes = 4.4× slower load |
 | Partition compensation records by date | Rejected for now | E8: reports 2.2–3.7× faster, lookups 1.6–3.5× slower, `id` can't stay unique |
 | Pool size and worker count for the directory | No change needed | E9: workers 1 → 4 and pool 15 → 50 gave the same ~13 req/s; the database is the bottleneck. More connections caused 503s from shared-memory exhaustion (fixed in E14) |
+| Prepared statements on pooled connections | **Changed** (`prepare_threshold=None`) | E10: promotion 1.4 ms → 153 ms after ~10 requests on a connection; single-client directory latency 2–3.5× lower after the fix |
