@@ -509,6 +509,55 @@ E4 measured that a `pg_trgm` GIN index turns a rare-term search at 1M employees 
 
 ---
 
+## E14 — Postgres configuration (shared memory, buffers, sort memory)
+
+E9 ran the lab database with the Docker image's defaults: `shared_buffers` 128 MB, `work_mem` 4 MB, `/dev/shm` 64 MB. It produced HTTP 503s at 50 clients (parallel queries ran out of `/dev/shm`), and the outliers plan showed a sort spilling to disk ("external merge, 6.6 MB"). This changes these settings in `docker-compose.yml`, one group at a time, and measures each on `acme_lab_1m` (8 GB container memory, 10 CPUs). The container is recreated for each change; data stays in the named volume.
+
+**Hypotheses (written before running):**
+
+1. **`shm_size` 64 MB → 512 MB** removes the 503 errors at 50 clients (4 workers, which gave 6–10 errors before) and does not change throughput, because the limit only decides whether a parallel query gets memory.
+2. **`shared_buffers` 128 MB → 1 GB** changes little (under 15% on any view): the 4 GB working set already sits in the operating system's page cache, which Postgres reads through.
+3. **`work_mem` 4 MB → 32 MB** removes the sort spills and speeds up outliers by a modest 5–15%. It is not a safe general win: E6 found `work_mem` 256 MB made one import step 8× slower, so I expect it can hurt as well as help, and I will check the other views for that.
+
+**Results** (`acme_lab_1m`, 8 GB container, 10 CPUs; one setting changed at a time, the container recreated each time with the data kept in its volume):
+
+**1. `shm_size` 64 MB → 512 MB.** The scenario that failed in E9 (4 workers, 50 clients, directory workload), run twice each:
+
+| `/dev/shm` | Requests/s | p95 | HTTP 503 errors |
+| --- | --- | --- | --- |
+| 64 MB (default) | 13.6 / 14.2 | 10.5 / 9.2 s | **23 / 19** |
+| 512 MB | 14.5 / 13.0 | 9.6 / 10.3 s | **0 / 0** |
+
+The Postgres log had no `could not resize shared memory segment` after the change.
+
+**2. `shared_buffers` 128 MB → 1 GB** (with the larger `/dev/shm`).
+
+- Pay-insight views (1M employees, single client, three passes): all within about ±10% of the 128 MB baseline: summary 3.9 s, stats 2.2 s, role 2.5 s, histogram 2.7–2.8 s (3.2 s before), outliers 6.6–7.6 s (7.3 s), composition 2.0–2.3 s (2.3 s). Not distinguishable from noise.
+- Directory (1 worker, two runs each):
+
+| Clients | 128 MB: requests/s, p50 | 1 GB: requests/s, p50 |
+| --- | --- | --- |
+| 10 | 14.6 / 12.8, 225 / 278 ms | 16.1 / 15.2, 176 / 181 ms |
+| 50 | 15.0 / 13.6, 2.5 / 3.0 s | 16.5 / 15.7, 2.5 s |
+
+About **10–20% more throughput and 20–35% lower median latency** at 10 clients; no change in p50 at 50 clients, where requests queue.
+
+**3. `work_mem` 4 MB → 32 MB** (with the two above). The views did not change (outliers 6.7 s against 6.6–7.6 s; no view got slower). The outliers plan's final sort stopped spilling to disk (8.9 MB in memory instead of 6.6 MB on disk), but hash steps still wrote about 100 MB of temp files. Setting `work_mem` per session to **128 MB** removed all temp files and gave 6.5 s, to **512 MB** 6.7 s, against about 7.0 s at 32 MB: a 4–8% change, inside the run-to-run spread.
+
+**Verdicts:**
+
+1. **Confirmed.** 42 errors in two runs became 0, throughput unchanged.
+2. **Partly refuted.** The views did not change, but the directory gained 10–20%; its many small index lookups benefit from the larger buffer cache more than the big scans do.
+3. **Confirmed that it is not a safe or useful win.** The spill went away and nothing sped up measurably; larger values (128 MB, 512 MB) did not hurt here either, but E6's slowdown at 256 MB shows the outcome depends on the workload, and `work_mem` applies per sort or hash node per connection, so 512 MB could use gigabytes under concurrency.
+
+**Applied** (`docker-compose.yml`, for the local database): `shm_size: 512mb` and `-c shared_buffers=1GB`. `work_mem` stays at the default.
+
+**Trade-offs:** `shared_buffers` takes 1 GB of the container's 8 GB (a quarter, the usual starting point) and Postgres then also relies on the operating system's cache, so the same data can sit in memory twice; `shm_size` only reserves memory when used. These are settings for the local Docker database. Render's managed Postgres has its own settings, which the free plan does not let you change, so none of this changes the hosted app.
+
+**Left:** `max_parallel_workers_per_gather` (default 2) and `effective_cache_size` were not tested; the page cache, not Postgres's own buffers, is what holds this database.
+
+---
+
 ## Summary — what the lab confirmed or changed
 
 | Decision | Status | Evidence |
@@ -528,3 +577,4 @@ E4 measured that a `pg_trgm` GIN index turns a rare-term search at 1M employees 
 | Pay-insight queries at 1M employees | **Changed** (context query, CTEs) | E11: 1.8–4.8× faster (outliers 39.8 s to 8.3 s); a full pass over per-employee pay (~2.3 s) remains; pay-changes report unchanged at 46 s |
 | Stored per-employee totals for pay insights | **Changed** (materialized view, refreshed after writes) | E12: views 1.2–2.3× faster again (cumulative 3.3–5.7×); refresh 3–7 s, 71 MB; staleness of about 16 s after a write |
 | Trigram indexes for directory text search | **Changed** (migration `0014`) | E13: searches of 3+ characters 8–180× faster at 1M (rare terms 9–28 ms, was 1.6–2.4 s); +39% bulk-insert time, 161 MB |
+| Postgres settings for the local database | **Changed** (`shm_size` 512 MB, `shared_buffers` 1 GB) | E14: 503 errors under concurrent load gone (42 to 0); directory +10-20% throughput; views and `work_mem` unchanged |

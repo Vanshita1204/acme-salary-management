@@ -1,6 +1,12 @@
 services:
   db:
     image: postgres:16
+    # Parallel queries use shared memory (/dev/shm); Docker's default 64 MB runs out under
+    # concurrent load and the queries fail (Scale Lab E9, E14).
+    shm_size: 512mb
+    # A larger buffer cache: ~10-20% more directory throughput (Scale Lab E14). work_mem is
+    # left at its default: raising it removed the sort spills but didn't make anything faster.
+    command: postgres -c shared_buffers=1GB
     env_file:
       - backend/.env
     ports:

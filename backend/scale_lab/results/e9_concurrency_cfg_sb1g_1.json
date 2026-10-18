@@ -1,0 +1,96 @@
+{
+  "environment": {
+    "machine": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "cpu_count": 10,
+    "memory_gb": 16,
+    "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "1310728kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-17T18:48:54+00:00"
+  },
+  "database": "acme_lab_1m",
+  "config": {
+    "workers": 1,
+    "pool_size": 5,
+    "max_overflow": 10,
+    "duration_s": 15.0,
+    "analytics_duration_s": 60,
+    "cache": "off"
+  },
+  "results": {
+    "directory": [
+      {
+        "clients": 10,
+        "requests": 263,
+        "errors": 0,
+        "error_statuses": {},
+        "throughput_rps": 16.1,
+        "p50_ms": 176.0,
+        "p95_ms": 2669.1,
+        "p99_ms": 3415.9,
+        "max_ms": 3665.9,
+        "server_p50_ms": 174.9,
+        "by_request": {
+          "first page": {
+            "n": 66,
+            "p50_ms": 131.8,
+            "p95_ms": 199.1
+          },
+          "search": {
+            "n": 69,
+            "p50_ms": 1485.0,
+            "p95_ms": 3077.9
+          },
+          "filtered by department and country": {
+            "n": 63,
+            "p50_ms": 187.6,
+            "p95_ms": 321.9
+          },
+          "by hire date": {
+            "n": 65,
+            "p50_ms": 135.1,
+            "p95_ms": 268.2
+          }
+        }
+      },
+      {
+        "clients": 50,
+        "requests": 297,
+        "errors": 0,
+        "error_statuses": {},
+        "throughput_rps": 16.5,
+        "p50_ms": 2539.6,
+        "p95_ms": 5911.7,
+        "p99_ms": 7652.5,
+        "max_ms": 7781.9,
+        "server_p50_ms": 2537.6,
+        "by_request": {
+          "first page": {
+            "n": 79,
+            "p50_ms": 1812.4,
+            "p95_ms": 3436.3
+          },
+          "search": {
+            "n": 78,
+            "p50_ms": 4479.1,
+            "p95_ms": 7633.5
+          },
+          "filtered by department and country": {
+            "n": 70,
+            "p50_ms": 2185.2,
+            "p95_ms": 3435.6
+          },
+          "by hire date": {
+            "n": 70,
+            "p50_ms": 2251.2,
+            "p95_ms": 3411.0
+          }
+        }
+      }
+    ]
+  }
+}
