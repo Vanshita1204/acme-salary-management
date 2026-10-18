@@ -684,6 +684,47 @@ The update left 50,000 dead tuples; 180 s later 49,258 were still there. (The "p
 
 ---
 
+## E18 — The pay-insight context query (currency count)
+
+Every pay-insight view first runs `currency_usage` (added in E11): a count of active employees by currency, restricted to employees who have some pay that counts toward the total, so it can say which currencies are in use and how many employees lack an exchange rate. E15 found it is the second-largest statement (11.4% of database time, about 1 s per call under load), and E17 showed the visibility map cannot help it. This looks at its plan and compares ways of answering the same question on `acme_lab_1m`. `python -m scale_lab.e18_currency_usage`.
+
+**Hypotheses (written before looking at the plan):**
+
+1. The time is spent **testing every active employee (862 k) for counted pay**: a probe into `current_compensation` joined to `compensation_types` for each employee, not in the grouping.
+2. Answering from the **stored totals** (`employee_totals`, one row per employee with counted pay) removes that probe: a join to the stored totals should be **3–5× faster**, under 200 ms.
+3. Replacing the join to `compensation_types` with the **literal list of counted type ids** helps only modestly (under 30%).
+4. All variants return **identical counts**.
+
+**Where the time goes** (`EXPLAIN (ANALYZE, BUFFERS)` of the as-built query, cold cache, 1.39 s): Postgres does **not** probe pay once per employee. It scans all 4.3 M rows of `current_compensation` (parallel), keeps the 3 M that count toward the total, builds a hash of them (32 batches, spilled to temp files), and semi-joins the 862 k active employees against it. The cost is reading and hashing the pay rows.
+
+**Results** (median of 5 after a warm-up, warm cache; unfiltered, and for the Engineering department in India):
+
+| Variant | Unfiltered | Speed-up | Department + country | Speed-up |
+| --- | --- | --- | --- | --- |
+| V0, as built (live pay, joined to the types) | 824 ms | 1.0× | 223 ms | 1.0× |
+| V1, with the literal list of counted type ids | 754 ms | 1.1× | 129 ms | 1.7× |
+| V2, join to the stored totals | 288 ms | 2.9× | 122 ms | 1.8× |
+| V3, `EXISTS` on the stored totals | 268 ms | 3.1× | 115 ms | 1.9× |
+
+All four returned **identical counts** (12 currencies and 862,938 employees unfiltered; 1 currency and 88,674 employees filtered).
+
+**Verdicts:**
+
+1. **Right in essence, wrong in mechanism.** The cost is reading the pay rows, but as one hash semi-join over all of them, not a probe per employee.
+2. **Mostly confirmed.** Using the stored totals is **3.1× faster unfiltered (824 → 269 ms)** and **1.9× with filters (223 → 115 ms)**. I predicted 3–5× and under 200 ms: the filtered case meets the latter, the unfiltered one does not (what remains is a parallel scan of 862 k employees, about 200 ms).
+3. **Partly refuted.** The literal type-id list gained 8% unfiltered (as predicted) but **42% with filters** (223 → 129 ms), because when few employees qualify, skipping the join to `compensation_types` matters more.
+4. **Confirmed.**
+
+**Applied:** when the stored totals are in use (development), `currency_usage` asks `employee_totals` who has counted pay (V3). That also makes it exact for the people the view reads: both now come from the same snapshot, where before a hire made after the last refresh counted in the currencies but not in the totals. Otherwise (production, 10,000 employees) it keeps the live query, V0: it takes a few milliseconds there and is always current.
+
+**Effect on the views** (1M employees, single client, with the stored totals): each pay-insight view got **0.2–0.5 s faster**: summary 3.9 → 3.7 s, stats 2.2 → 2.0 s, role across countries 2.5–2.9 → 2.2 s, histogram 2.7–3.0 → 2.4 s, composition 2.0–2.3 → 1.9–2.1 s, outliers 6.6–7.0 → 6.3–6.5 s. No change at 10,000 employees.
+
+**Trade-off:** the development path now depends on the stored totals for its context as well as its numbers, so a stale snapshot is stale in both consistently. The parity test (stored against live, including the excluded-no-rate count and the rate dates) covers it.
+
+**Left:** the unfiltered cost is now mostly the parallel scan of employees; a covering index on `(status, currency)` could make that index-only, an index experiment for later.
+
+---
+
 ## Summary — what the lab confirmed or changed
 
 | Decision | Status | Evidence |
@@ -708,3 +749,4 @@ The update left 50,000 dead tuples; 180 s later 49,258 were still there. (The "p
 | Where database time goes | Recorded | E15: pay-changes report 49%, per-view currency count 11%, the six other pay-insight statements 4-11% each |
 | Pay-changes report on narrow date ranges | **Not changed** (restricting the history window refuted) | E16: month 1.4× faster but year 2-3× slower; real fix is a stored change log; accepted for now |
 | VACUUM and the visibility map | Recorded; no code change | E17: a 5% update burst made counts 3-6x slower at 1M and autovacuum did not repair it; a 4.4 s manual VACUUM did. Irrelevant at 10k |
+| Pay-insight context query (currency count) | **Changed in development** (reads the stored totals) | E18: 3.1x faster unfiltered, 1.9x filtered; views 0.2-0.5 s faster; live query kept for production |

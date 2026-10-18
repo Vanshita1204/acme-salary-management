@@ -142,12 +142,17 @@ def population(session: Session, query: DirectoryQuery, reporting: str) -> Selec
 
 def currency_usage(session: Session, query: DirectoryQuery) -> dict[str, int]:
     """How many employees in the population (as `population` defines it) are paid in each
-    currency. Needs no pay totals, so it costs a scan of employees, not of all pay."""
-    has_counted_pay = exists().where(
-        CurrentCompensation.employee_id == Employee.id,
-        CurrentCompensation.compensation_type_id == CompensationType.id,
-        CompensationType.counts_toward_total,
-    )
+    currency. Needs no pay totals. When the stored totals are in use it asks them who has
+    counted pay, which is 3x faster at a million employees (Scale Lab E18) and describes
+    exactly the people `population` reads; otherwise it checks the live pay."""
+    if get_settings().use_totals_view:
+        has_counted_pay = exists().where(employee_totals.c.employee_id == Employee.id)
+    else:
+        has_counted_pay = exists().where(
+            CurrentCompensation.employee_id == Employee.id,
+            CurrentCompensation.compensation_type_id == CompensationType.id,
+            CompensationType.counts_toward_total,
+        )
     stmt = (
         select(Employee.currency, func.count())
         .where(Employee.status == ACTIVE, has_counted_pay)
