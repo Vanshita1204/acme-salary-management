@@ -7,6 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import InterfaceError, OperationalError
+from starlette.middleware.gzip import GZipMiddleware
 
 from app.api import (
     analytics,
@@ -95,12 +96,14 @@ async def timing_and_cache(request: Request, call_next):
     stats = QueryStats()
     query_stats.set(stats)
     response = await call_next(request)
+    # Every response is built in memory, so hand on the whole body rather than a stream:
+    # the gzip middleware outside only honours its minimum size for complete bodies.
+    body = b"".join([chunk async for chunk in response.body_iterator])
     if cacheable and response.status_code == 200:
-        body = b"".join([chunk async for chunk in response.body_iterator])
         response_cache.put(
             key, CachedResponse(200, dict(response.headers), body), version
         )
-        response = Response(body, response.status_code, dict(response.headers))
+    response = Response(body, response.status_code, dict(response.headers))
     timing = f"app;dur={elapsed_ms():.1f}"
     if stats.count:
         timing += (
@@ -111,6 +114,13 @@ async def timing_and_cache(request: Request, call_next):
         timing += ', cache;desc="miss"'
     response.headers["Server-Timing"] = timing
     return response
+
+
+# Level 5, not Starlette's default 9: nearly the same size for several times the CPU (E21).
+# Added after the timing middleware above, so it is the outermost: `Server-Timing` measures
+# the work before compression.
+if get_settings().compress_responses:
+    app.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
 
 
 # What people see when something we didn't anticipate goes wrong. Never the exception text:

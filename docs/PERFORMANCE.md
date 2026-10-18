@@ -834,6 +834,55 @@ Ten clients on the directory workload for 12 s (and, last column, the one-client
 
 ---
 
+## E21 — Compression and cache headers
+
+The first look at the application layer (the 10,000-employee profile in the conversation behind E21) found the server sends everything uncompressed: the hosted bundle is 345 KB of JavaScript, the CSV export 1.5 MB, a directory page 20 KB, and a pay-insight view up to 104 KB. On Render the browser is on the other side of a real network, so bytes become time. This measures what gzip saves, what it costs in CPU, and what cache headers add for repeat visits. `python -m scale_lab.e21_compression`. Local servers on the 10k database; transfer time is simulated by limiting the download rate (`curl --limit-rate`), because there is no network latency on one machine.
+
+**Hypotheses (written before building anything):**
+
+1. gzip makes JSON responses **5–10× smaller** (a directory page from 20 KB to about 3 KB), the JavaScript bundle about **3×** smaller (345 KB to about 110 KB), and the CSV export about **5×** smaller (1.5 MB to about 300 KB).
+2. The CPU cost is small at a moderate level: **under 3 ms** for a directory page and **under 60 ms** for the 1.5 MB export at level 5, while Starlette's default level 9 costs several times more for almost no extra saving.
+3. On a **4 Mbps** link the first load of the bundle falls from about 700 ms to about **230 ms**, and the export download from about 3 s to about **0.6 s**; on a fast link (100 Mbps) the difference is negligible.
+4. **Cache headers:** marking the hashed bundle files `immutable` removes the bundle from every repeat visit (0 bytes). ETag revalidation of the nine reference lists saves little *after* gzip (they total only a few KB), so I expect it is not worth building.
+
+**What changed** (`app/main.py`, `app/web.py`): responses of 1 KB or more are gzipped at level 5 when the browser accepts it (`COMPRESS_RESPONSES`, on by default); the build's hashed files under `/assets` are served `Cache-Control: public, max-age=31536000, immutable` (they are named after their content, so they never change under their name); `index.html` stays `no-cache`. A bug found on the way: my timing middleware handed on a *stream*, which the gzip middleware compresses regardless of size, so a 15-byte `/health` response was being gzipped into a bigger one; the middleware now passes on whole bodies and a test covers it.
+
+**Results** (the site on the 10,000-employee database; two servers, compression off and on; 10 requests each, median):
+
+| Response | Plain | Gzip | Ratio | Extra time on this machine | Transfer at 4 Mbps | Transfer at 100 Mbps |
+| --- | --- | --- | --- | --- | --- | --- |
+| JavaScript bundle | 341.3 KB | 101.4 KB | 3.4× | +10.5 ms | 699 → 208 ms | 28 → 8 ms |
+| stylesheet | 11.5 KB | 3.2 KB | 3.6× | +0.4 ms | 24 → 7 ms | 1 → 0 ms |
+| reference: countries | 14.2 KB | 3.0 KB | 4.7× | +0.5 ms | 29 → 6 ms | 1 → 0 ms |
+| directory page (50) | 20.0 KB | 3.3 KB | 6.0× | +1.1 ms | 41 → 7 ms | 2 → 0 ms |
+| pay insight: outliers | 101.7 KB | 17.6 KB | 5.8× | -0.3 ms | 208 → 36 ms | 8 → 1 ms |
+| CSV export (all 10k) | 1,463.5 KB | 387.8 KB | 3.8× | +46.4 ms | 2,997 → 794 ms | 120 → 32 ms |
+
+Transfer times are computed from size and link speed (size ÷ 500 KB/s and ÷ 12.5 MB/s), not measured: `curl --limit-rate` lets short transfers burst, so for the small files it reported times faster than the link allows. For the one large transfer it was reliable and agrees: the **CSV export took 2,792 ms plain and 600 ms gzipped at 4 Mbps** (4.7× faster). The extra time column is the measured cost on this machine with no network delay.
+
+**gzip levels on the real payloads** (size, CPU time per compression):
+
+| Payload | Level 1 | Level 5 (chosen) | Level 6 | Level 9 (Starlette's default) |
+| --- | --- | --- | --- | --- |
+| JavaScript bundle | 119 KB, 3.85 ms | 101 KB, 9.25 ms | 100 KB, 12.08 ms | 100 KB, 15.23 ms |
+| directory page (50) | 4 KB, 0.08 ms | 3 KB, 0.13 ms | 3 KB, 0.16 ms | 3 KB, 0.34 ms |
+| CSV export (all 10k) | 462 KB, 13.93 ms | 388 KB, 35.3 ms | 381 KB, 45.55 ms | 375 KB, 74.0 ms |
+
+**Cache headers:** the hashed bundle is served with `public, max-age=31536000, immutable`; a request with its `ETag` returns **304 with 0 bytes** (static files already had validators). With `immutable` the browser does not even ask on a repeat visit.
+
+**Verdicts:**
+
+1. **Mostly confirmed.** JSON shrank 4.7–6.0× (predicted 5–10×), the bundle 3.4× (about 3×), but the CSV export only **3.8×** (predicted 5×): numbers compress less than text.
+2. **Confirmed.** Level 5 costs 0.13 ms on a directory page and 35 ms on the export (the full request was 46 ms slower); level 9 costs 2 to 2.1× more CPU for 1.4% (bundle) to 3% (export) smaller output, and level 1 gives 18 to 19% larger files. The bundle costs about 10 ms of CPU *per request* because static files are compressed again every time.
+3. **Confirmed for slow links, and a loss on fast ones.** At 4 Mbps the bundle's transfer falls from about 700 ms to about 210 ms and the export's from 3.0 s to 0.8 s (measured 2.8 s to 0.6 s). At 100 Mbps the transfer saving (about 8 ms for the bundle, 90 ms for the export) is smaller than or close to the compression time, and the **export was 40 ms slower gzipped (463 → 503 ms)**.
+4. **Confirmed.** Reference lists after gzip total under 6 KB, so ETag revalidation for them was not built. Server-Timing, being inside the compression, does not include the compression time.
+
+**Decision:** keep gzip on by default (the hosted app is reached over the internet, where it wins by a wide margin) at level 5; keep the immutable cache headers. **Trade-offs:** CPU on every large response (about 10 ms per bundle request on Render's small CPU, which a precompressed file or a cache of the compressed bundle would remove); worse for very fast links.
+
+**Left:** precompress the bundle at build time instead of per request.
+
+---
+
 ## Summary — what the lab confirmed or changed
 
 | Decision | Status | Evidence |
@@ -861,3 +910,4 @@ Ten clients on the directory workload for 12 s (and, last column, the one-client
 | Pay-insight context query (currency count) | **Changed in development** (reads the stored totals) | E18: 3.1x faster unfiltered, 1.9x filtered; views 0.2-0.5 s faster; live query kept for production |
 | Covering, partial and BRIN index variants | **Not adopted** | E19: planner ignored both covering indexes; BRIN made a date-range count 3x slower (physical order does not follow date) |
 | `max_parallel_workers_per_gather` and `effective_cache_size` | **Defaults kept** | E20: 0 workers made three views 1.5-2.6x slower but gave +8% directory throughput under load; 4 or 8 workers gained only on one view; cache size changed nothing |
+| Compression and cache headers | **Changed** (gzip level 5 for responses of 1 KB or more; immutable hashed assets) | E21: JSON 4.7-6x and bundle 3.4x smaller; export 2.8 s to 0.6 s at 4 Mbps but 40 ms slower at 100 Mbps; bug fixed (tiny responses were being gzipped) |

@@ -18,11 +18,23 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, Response
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.staticfiles import StaticFiles
 
+from app.core.config import get_settings
 from app.main import app as api
 
 DEFAULT_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
+
+
+class HashedAssets(StaticFiles):
+    """The build names each file after its content (`index-DsHF6Uvp.js`), so a file never
+    changes under its name and browsers may keep it for good."""
+
+    def file_response(self, *args, **kwargs):
+        response = super().file_response(*args, **kwargs)
+        response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
 
 
 @asynccontextmanager
@@ -42,11 +54,13 @@ def create_site(dist: Path | None = None) -> FastAPI:
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
+    if get_settings().compress_responses:
+        site.add_middleware(GZipMiddleware, minimum_size=1024, compresslevel=5)
     site.mount("/api", api)
 
     index = dist / "index.html"
     if index.is_file():
-        site.mount("/assets", StaticFiles(directory=dist / "assets"), name="assets")
+        site.mount("/assets", HashedAssets(directory=dist / "assets"), name="assets")
 
         @site.get("/{path:path}", include_in_schema=False)
         def page(path: str) -> Response:

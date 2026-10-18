@@ -1,0 +1,184 @@
+{
+  "environment": {
+    "machine": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "cpu_count": 10,
+    "memory_gb": 16,
+    "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "1310728kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-18T20:15:57+00:00"
+  },
+  "JavaScript bundle": {
+    "path": "/assets/index-DsHF6Uvp.js",
+    "bytes_plain": 349530,
+    "bytes_gzip": 103834,
+    "ratio": 3.4,
+    "unthrottled_ms_plain": 1.8,
+    "unthrottled_ms_gzip": 12.3,
+    "links": {
+      "4 Mbps": {
+        "plain_ms": 532,
+        "gzip_ms": 46
+      },
+      "100 Mbps": {
+        "plain_ms": 22,
+        "gzip_ms": 11
+      }
+    }
+  },
+  "stylesheet": {
+    "path": "/assets/index-Ct6bAser.css",
+    "bytes_plain": 11785,
+    "bytes_gzip": 3273,
+    "ratio": 3.6,
+    "unthrottled_ms_plain": 0.9,
+    "unthrottled_ms_gzip": 1.3,
+    "links": {
+      "4 Mbps": {
+        "plain_ms": 1,
+        "gzip_ms": 2
+      },
+      "100 Mbps": {
+        "plain_ms": 1,
+        "gzip_ms": 2
+      }
+    }
+  },
+  "reference: countries": {
+    "path": "/api/countries",
+    "bytes_plain": 14569,
+    "bytes_gzip": 3070,
+    "ratio": 4.7,
+    "unthrottled_ms_plain": 4.3,
+    "unthrottled_ms_gzip": 4.8,
+    "links": {
+      "4 Mbps": {
+        "plain_ms": 6,
+        "gzip_ms": 6
+      },
+      "100 Mbps": {
+        "plain_ms": 6,
+        "gzip_ms": 7
+      }
+    }
+  },
+  "directory page (50)": {
+    "path": "/api/employees?limit=50",
+    "bytes_plain": 20433,
+    "bytes_gzip": 3402,
+    "ratio": 6.0,
+    "unthrottled_ms_plain": 18.2,
+    "unthrottled_ms_gzip": 19.3,
+    "links": {
+      "4 Mbps": {
+        "plain_ms": 21,
+        "gzip_ms": 19
+      },
+      "100 Mbps": {
+        "plain_ms": 21,
+        "gzip_ms": 22
+      }
+    }
+  },
+  "pay insight: outliers": {
+    "path": "/api/analytics/outliers",
+    "bytes_plain": 104112,
+    "bytes_gzip": 18070,
+    "ratio": 5.8,
+    "unthrottled_ms_plain": 89.9,
+    "unthrottled_ms_gzip": 89.6,
+    "links": {
+      "4 Mbps": {
+        "plain_ms": 200,
+        "gzip_ms": 91
+      },
+      "100 Mbps": {
+        "plain_ms": 85,
+        "gzip_ms": 91
+      }
+    }
+  },
+  "CSV export (all 10k)": {
+    "path": "/api/employees/export",
+    "bytes_plain": 1498575,
+    "bytes_gzip": 397158,
+    "ratio": 3.8,
+    "unthrottled_ms_plain": 456.7,
+    "unthrottled_ms_gzip": 503.1,
+    "links": {
+      "4 Mbps": {
+        "plain_ms": 2792,
+        "gzip_ms": 600
+      },
+      "100 Mbps": {
+        "plain_ms": 463,
+        "gzip_ms": 503
+      }
+    }
+  },
+  "gzip_levels": {
+    "JavaScript bundle": {
+      "1": {
+        "bytes": 122228,
+        "ms": 3.85
+      },
+      "5": {
+        "bytes": 103743,
+        "ms": 9.25
+      },
+      "6": {
+        "bytes": 102579,
+        "ms": 12.08
+      },
+      "9": {
+        "bytes": 102269,
+        "ms": 15.23
+      }
+    },
+    "directory page (50)": {
+      "1": {
+        "bytes": 4044,
+        "ms": 0.08
+      },
+      "5": {
+        "bytes": 3402,
+        "ms": 0.13
+      },
+      "6": {
+        "bytes": 3304,
+        "ms": 0.16
+      },
+      "9": {
+        "bytes": 3249,
+        "ms": 0.34
+      }
+    },
+    "CSV export (all 10k)": {
+      "1": {
+        "bytes": 472787,
+        "ms": 13.93
+      },
+      "5": {
+        "bytes": 397158,
+        "ms": 35.3
+      },
+      "6": {
+        "bytes": 390157,
+        "ms": 45.55
+      },
+      "9": {
+        "bytes": 384436,
+        "ms": 74.0
+      }
+    }
+  },
+  "cache": {
+    "cache_control": "public, max-age=31536000, immutable",
+    "etag_revalidation_status": 304,
+    "etag_revalidation_bytes": 0
+  }
+}

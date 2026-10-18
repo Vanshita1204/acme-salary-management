@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     # Seconds the API waits after a write before refreshing the view, so a burst of writes
     # (an import, a run of edits) causes one refresh.
     totals_refresh_delay: float = 2
+    # Compress responses with gzip when the browser accepts it (Scale Lab E21). On by
+    # default: JSON and the JavaScript bundle shrink 3-10x, which is time on a real network.
+    compress_responses: bool = True
     # How long an identical pay-insight request is answered from memory (0 turns it off).
     analytics_cache_seconds: float = 300
 
