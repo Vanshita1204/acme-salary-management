@@ -465,6 +465,50 @@ Cumulative against the E9/E11 starting point (13.4 / 8.8 / 8.1 / 10.8 / 39.8 / 7
 
 ---
 
+## E13 — Trigram indexes for the directory's text search
+
+E4 measured that a `pg_trgm` GIN index turns a rare-term search at 1M employees from seconds into milliseconds, but the app was not changed because 10k employees do not need it. E10 and E11 left text search as the largest remaining directory cost: a search with no match took **4.1 s** as a whole request (3.4 s in the ordered scan that tests every row), and a common search spent 500 ms in its count. The prepared-statement fix from E10 also removes the other condition E4 found (the index was only used with per-term plans). This applies the E4 design as migration `0014` and measures it on `acme_lab_1m` with the app's own directory queries. `python -m scale_lab.e13_trigram`.
+
+**Hypotheses (written before running):**
+
+1. A search term of **3 or more characters that matches few employees** gets much faster: the whole directory request falls from seconds to **under 50 ms**, including the no-match case (4.1 s now).
+2. **Short terms (1–2 characters)** are unchanged: a trigram index needs at least 3 characters.
+3. **Very common 3-character terms** (tens of thousands of matches) improve little: the index still has to return a large number of rows, and the exact count of matches stays expensive.
+4. The four indexes cost **about 160 MB** (E4) and **about 17 s** to build at 1M, and make inserts measurably slower (GIN indexes are costlier to maintain than B-trees); I expect a bulk insert of 100,000 employees to take **20–60% longer**.
+
+**Results** (`acme_lab_1m`, whole directory request with the search term, fresh session per request, median of 5, the app's own query):
+
+| Term | Matches | Without the indexes | With the indexes | Speed-up |
+| --- | --- | --- | --- | --- |
+| 2 characters ("an") | 311,011 | 540 ms | 518.4 ms | 1.0× |
+| 3 characters, common ("son") | 58,728 | 615 ms | 78.5 ms | 7.8× |
+| surname ("abbott") | 218 | 2,324 ms | 14.7 ms | 158.1× |
+| part of a full name ("joan abb") | 3 | 2,240 ms | 20.9 ms | 107.2× |
+| part of a code ("emp-0065") | 100 | 2,368 ms | 27.7 ms | 85.5× |
+| part of an email ("abbott.659") | 0 | 1,704 ms | 12.7 ms | 134.2× |
+| no match ("zzzqqq") | 0 | 1,645 ms | 9.1 ms | 180.8× |
+
+- **Index cost:** four GIN indexes, **161 MB** (email 75, full name 43, last name 24, code 19 MB), built in **21 s** by the migration. A bulk insert of 100,000 employees (rolled back; best of three) took **9.3 s without and 12.83 s with** them (**+38%**).
+- **Planner:** for the app's own query, `EXPLAIN` shows all four indexes used (a bitmap OR across them) for a surname, a full-name fragment, a code and an email. A test (`test_indexes.py`) now fails if a changed search expression stops matching the indexes.
+
+**Verdicts:**
+
+1. **Confirmed.** Every term of 3 or more characters with few matches now costs **9–28 ms** per request, 85–180× faster. The no-match search that took 1.6 s (4.1 s with the earlier term "zzzzq") takes 9 ms.
+2. **Confirmed.** The 2-character search is unchanged (540 → 518 ms): trigram indexes need 3 characters.
+3. **Partly refuted.** I expected little gain for a common 3-character term; "son" (58,728 matches) went from 615 to 79 ms (7.8×). It is the slowest 3+ character search because the exact count of tens of thousands of matches still costs time; that is the part the capped or estimated count (E10) would remove.
+4. **Confirmed.** Size 161 MB and 21 s build as in E4; the insert slowdown (+38%) is inside the 20–60% I expected.
+
+**Trade-offs:**
+
+- **Writes:** about 38% slower bulk inserts, which matters for imports of tens of thousands of employees, not for single hires. (GIN indexes buffer small inserts and merge them later, so single-row inserts are cheaper than this suggests.)
+- **Space:** 161 MB at 1M employees, about 40% of the size of the `employees` table (406 MB).
+- **Short searches:** 1–2 character searches still scan; the page could ask for 3 characters before searching.
+- **Deployment:** needs the `pg_trgm` extension (standard, available on managed Postgres including Render); building the indexes on a large live table should use `CREATE INDEX CONCURRENTLY` outside a migration transaction, which this migration does not (it holds a write lock for the build: 21 s at 1M).
+
+**Left:** 2-character searches (about 520 ms at 1M) and the exact count for common terms.
+
+---
+
 ## Summary — what the lab confirmed or changed
 
 | Decision | Status | Evidence |
@@ -483,3 +527,4 @@ Cumulative against the E9/E11 starting point (13.4 / 8.8 / 8.1 / 10.8 / 39.8 / 7
 | Prepared statements on pooled connections | **Changed** (`prepare_threshold=None`) | E10: promotion 1.4 ms → 153 ms after ~10 requests on a connection; single-client directory latency 2–3.5× lower after the fix |
 | Pay-insight queries at 1M employees | **Changed** (context query, CTEs) | E11: 1.8–4.8× faster (outliers 39.8 s to 8.3 s); a full pass over per-employee pay (~2.3 s) remains; pay-changes report unchanged at 46 s |
 | Stored per-employee totals for pay insights | **Changed** (materialized view, refreshed after writes) | E12: views 1.2–2.3× faster again (cumulative 3.3–5.7×); refresh 3–7 s, 71 MB; staleness of about 16 s after a write |
+| Trigram indexes for directory text search | **Changed** (migration `0014`) | E13: searches of 3+ characters 8–180× faster at 1M (rare terms 9–28 ms, was 1.6–2.4 s); +39% bulk-insert time, 161 MB |

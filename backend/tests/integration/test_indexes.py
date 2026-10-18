@@ -123,3 +123,26 @@ def test_history_lookups_are_indexed(db):
         "(currency, rate_date DESC)" in d
         for d in index_definitions(db, "exchange_rates")
     )
+
+
+def test_the_directory_search_can_use_the_trigram_indexes(db):
+    """Each searched expression has a trigram index, and the planner can use it for the
+    query the directory builds (a changed expression would silently stop matching).
+    Plain scans are disabled so a tiny test table doesn't hide the index."""
+    stmt = apply_filters(select(Employee.id), DirectoryQuery(q="abbott"))
+    sql = str(
+        stmt.compile(
+            dialect=db.get_bind().dialect, compile_kwargs={"literal_binds": True}
+        )
+    )
+    for setting in ("enable_seqscan", "enable_indexscan", "enable_indexonlyscan"):
+        db.execute(text(f"SET LOCAL {setting} = off"))  # leaves only bitmap scans
+    plan = "\n".join(row[0] for row in db.execute(text(f"EXPLAIN {sql}")))
+
+    for index in (
+        "ix_employees_trgm_full_name",
+        "ix_employees_trgm_last_name",
+        "ix_employees_trgm_email",
+        "ix_employees_trgm_code",
+    ):
+        assert index in plan, f"{index} not used:\n{plan}"

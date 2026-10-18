@@ -1,0 +1,67 @@
+{
+  "environment": {
+    "machine": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "cpu_count": 10,
+    "memory_gb": 16,
+    "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "163848kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-17T18:38:32+00:00"
+  },
+  "database": "acme_lab_1m",
+  "trigram_index_bytes": {
+    "ix_employees_trgm_full_name": 45342720,
+    "ix_employees_trgm_last_name": 25673728,
+    "ix_employees_trgm_email": 78241792,
+    "ix_employees_trgm_code": 19603456
+  },
+  "terms": {
+    "2 characters": {
+      "term": "an",
+      "matches": 311011,
+      "median_ms": 518.4
+    },
+    "3 characters, common": {
+      "term": "son",
+      "matches": 58728,
+      "median_ms": 78.5
+    },
+    "surname": {
+      "term": "abbott",
+      "matches": 218,
+      "median_ms": 14.7
+    },
+    "part of a full name": {
+      "term": "joan abb",
+      "matches": 3,
+      "median_ms": 20.9
+    },
+    "part of a code": {
+      "term": "emp-0065",
+      "matches": 100,
+      "median_ms": 27.7
+    },
+    "part of an email": {
+      "term": "abbott.659",
+      "matches": 0,
+      "median_ms": 12.7
+    },
+    "no match": {
+      "term": "zzzqqq",
+      "matches": 0,
+      "median_ms": 9.1
+    }
+  },
+  "insert_100k": {
+    "seconds": [
+      13.34,
+      12.83,
+      12.88
+    ],
+    "best_seconds": 12.83
+  }
+}

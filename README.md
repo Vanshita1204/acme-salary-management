@@ -56,6 +56,8 @@ The first start takes about a minute (the seed itself ~10 s on a laptop); later 
 
 The daily job (00:10 UTC) refreshes exchange rates and makes future-dated pay changes current. It runs inside the container; if the host spins a free instance down overnight it catches up on the next start, and the app is correct meanwhile because current pay is also resolved on read.
 
+**Extension:** the directory's search uses `pg_trgm` (indexes in migration `0014`); it is a standard Postgres extension, available on Render's managed Postgres, and the migration creates it (the database user needs permission to).
+
 **Optional hardening:** create a role that can only read and insert compensation records (`APP_DB_PASSWORD=… python -m app.db.grants acme_app`) and set `RUNTIME_DATABASE_URL` to it. Migrations keep using `DATABASE_URL`. Managed Postgres plans that don't allow creating roles skip this; the database triggers still block changes to history.
 
 There is no login: the app is open to anyone with the URL, which is acceptable for a demo on synthetic data only (see Future Roadmap in `docs/SPECIFICATION.md`).
