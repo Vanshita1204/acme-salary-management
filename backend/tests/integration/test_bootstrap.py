@@ -42,7 +42,7 @@ def bootstrap(url, employees: int) -> subprocess.CompletedProcess:
         # Nothing listens here: the rate fetch fails fast, like a provider outage.
         "EXCHANGE_RATE_API_URL": "http://127.0.0.1:9/rates",
     }
-    env.pop("RUNTIME_DATABASE_URL", None)
+    env["RUNTIME_DATABASE_URL"] = ""  # empty beats a runtime URL in .env
     return subprocess.run(
         [sys.executable, "-m", "app.bootstrap", "--employees", str(employees)],
         cwd=BACKEND,

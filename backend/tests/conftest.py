@@ -25,7 +25,8 @@ from app.core.config import get_settings
 
 
 def test_database_url() -> str:
-    explicit = os.environ.get("TEST_DATABASE_URL")
+    # The real environment or the .env file (the app's settings read both).
+    explicit = os.environ.get("TEST_DATABASE_URL") or get_settings().test_database_url
     if explicit:
         return explicit
     app_url = make_url(get_settings().database_url)
@@ -63,7 +64,8 @@ ensure_database(_URL)
 os.environ["DATABASE_URL"] = _URL
 os.environ["ANALYTICS_TOTALS_VIEW"] = "false"  # tests check the live computation; one test compares the view
 os.environ["ANALYTICS_CACHE_SECONDS"] = "0"  # tests that want the cache switch it on
-os.environ.pop("RUNTIME_DATABASE_URL", None)
+# Empty, not just removed: the app also reads .env, which may name a restricted runtime database.
+os.environ["RUNTIME_DATABASE_URL"] = ""
 get_settings.cache_clear()
 
 

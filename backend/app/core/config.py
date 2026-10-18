@@ -10,6 +10,9 @@ class Settings(BaseSettings):
     # Optional: the API connects as this least-privilege role instead (see app.db.grants),
     # so it can't change or remove compensation history even by mistake.
     runtime_database_url: str | None = None
+    # The database the tests run against (they never touch `database_url`'s data).
+    # Unset: `<database name>_test`, created on first use.
+    test_database_url: str | None = None
     # Latest-rates endpoint returning units of each currency per 1 USD (open.er-api.com format).
     exchange_rate_api_url: str = "https://open.er-api.com/v6/latest/USD"
     # "development" turns on the features built for much larger data (see
@@ -38,7 +41,7 @@ class Settings(BaseSettings):
             return self.analytics_totals_view
         return self.environment == "development"
 
-    @field_validator("database_url", "runtime_database_url")
+    @field_validator("database_url", "runtime_database_url", "test_database_url")
     @classmethod
     def use_psycopg_driver(cls, url: str | None) -> str | None:
         """Hosted Postgres hands out `postgres://` or `postgresql://` URLs; the driver
