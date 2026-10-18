@@ -725,6 +725,57 @@ All four returned **identical counts** (12 currencies and 862,938 employees unfi
 
 ---
 
+## E19 — Index variants (covering, partial, BRIN)
+
+E7 settled which ordinary indexes the app needs. This tests three other kinds against the queries that E15 and E18 found expensive, on `acme_lab_1m`, as an experiment only: each index is created, measured and dropped, and the application and its migrations are not changed. `python -m scale_lab.e19_indexes`.
+
+**Candidates:**
+
+- **I1, a partial covering index for the currency count:** `(currency, id) WHERE status = 'active'`. The count reads only these two columns of the 862 k active employees, so it could be answered from a small index instead of scanning the 406 MB `employees` table.
+- **I2, a wide partial covering index for the pay-insight population:** `(id) INCLUDE (company_id, department_id, job_title_id, job_level_id, current_country, currency) WHERE status = 'active'`. Every view starts by reading those columns of the active employees.
+- **I3, BRIN on `compensation_records(effective_date)`:** a tiny index for date ranges (the pay-changes report), which works only if the table's physical order follows the date.
+
+**Hypotheses (written before running):**
+
+1. **I1:** the unfiltered currency count falls from about 270 ms to **under 150 ms** (at least 1.7×); the filtered one (department + country) does not change, since its work is elsewhere.
+2. **I2:** the pay-insight views improve by **10% or less**: their main statements are dominated by the joins, the aggregation and the median, not by the scan of employees. Inserting 100,000 employees gets **15–25% slower** with it.
+3. **I3:** BRIN is **useless here**. Records are inserted employee by employee, so their dates are scattered across the table (correlation near zero) and the planner will not use it, or will gain nothing for a one-month range.
+4. **Sizes:** I1 about 25 MB, I2 about 70 MB, I3 under 1 MB.
+
+**Results** (`acme_lab_1m`, in-process timings, best of 3 for the views, median of 5 for the queries; the 100,000-employee insert is the best of 3; one run each):
+
+| | Baseline | I1 partial covering | I2 wide partial covering | I3 BRIN |
+| --- | --- | --- | --- | --- |
+| Index size | n/a | 26.0 MB | 55.5 MB | 0.1 MB |
+| Build time | n/a | 1.0 s | 1.0 s | 6.0 s |
+| Used by the planner for the currency count | n/a | **no** | **no** | no |
+| Currency count, unfiltered | 341.6 ms | 263.2 ms | 274.7 ms | 342.5 ms |
+| Currency count, filtered | 106.5 ms | 109.0 ms | 116.7 ms | 112.4 ms |
+| One-month date-range count on history | 677.1 ms | 729.9 ms | 935.0 ms | **2019.9 ms (index used)** |
+| Insert of 100,000 employees | 12.03 s | 12.48 s | 12.87 s | 12.25 s |
+| Views, time relative to baseline (summary, stats by department, role across countries, histogram, composition, outliers) | 1.00 | 1.03 / 1.08 / 1.08 / 1.24 / 1.11 / 1.17 | 0.96 / 1.10 / 1.06 / 1.26 / 1.07 / 1.08 | 1.01 / 1.02 / 1.08 / 1.05 / 1.13 / 1.06 |
+
+Baseline views: summary 3.6 s, stats by department 1.8 s, role across countries 2.1 s, histogram 2.3 s, composition 1.8 s, outliers 6.4 s.
+
+**An upper bound for I1.** The planner did not choose I1 (nor an index-only scan of it). With sequential scans disabled it chose a bitmap scan on the existing status index, and the count took 288–435 ms against 227–525 ms with the planner's own choice: no gain, so I1 would not help this query even if it were picked.
+
+**Verdicts:**
+
+1. **Refuted.** I1 did not get the unfiltered count under 150 ms: the planner never used it, and the 263 ms against the 342 ms baseline is the machine's run-to-run spread (E18 measured 269 ms with no index at all).
+2. **Confirmed that it does not help, for a different reason than predicted.** I2 changed the views by between 0.96× and 1.26× (all noise: the planner did not use it either). Its insert cost was +7% (12.0 → 12.9 s), within the ±10% spread of this test, below the 15–25% I expected.
+3. **Refuted, and worse than predicted.** BRIN was used for the one-month date range and made it **3× slower** (677 → 2,020 ms): the table's physical order does not follow the date (correlation 0.021), so every block range matches and Postgres rechecks almost the whole table through a bitmap scan, instead of the parallel sequential scan it used without the index.
+4. **Mostly confirmed.** Sizes 26 MB (I1), 55.5 MB (I2, smaller than the 70 MB guessed), 0.1 MB (I3).
+
+**Conclusions:**
+
+- None of the three is adopted. The planner already scans `employees` in parallel quickly (about 200 ms of the unfiltered count); an index cannot cut a cost that is mostly the hash join with the stored totals.
+- A BRIN index needs the data's physical order to follow the indexed column. This table is loaded employee by employee, so dates are scattered; it would work on an append-only log written in time order, which this is not.
+- Noise: the same view varied by up to 25% between states (histogram 2.3 to 2.9 s), so these tests could not show an effect under about 25% on a single view.
+
+**Not tested:** a plain B-tree on `effective_date` (E8 found it did not help a date-range query on this table), and covering indexes for the directory's page query, which already takes 1–2 ms.
+
+---
+
 ## Summary — what the lab confirmed or changed
 
 | Decision | Status | Evidence |
@@ -750,3 +801,4 @@ All four returned **identical counts** (12 currencies and 862,938 employees unfi
 | Pay-changes report on narrow date ranges | **Not changed** (restricting the history window refuted) | E16: month 1.4× faster but year 2-3× slower; real fix is a stored change log; accepted for now |
 | VACUUM and the visibility map | Recorded; no code change | E17: a 5% update burst made counts 3-6x slower at 1M and autovacuum did not repair it; a 4.4 s manual VACUUM did. Irrelevant at 10k |
 | Pay-insight context query (currency count) | **Changed in development** (reads the stored totals) | E18: 3.1x faster unfiltered, 1.9x filtered; views 0.2-0.5 s faster; live query kept for production |
+| Covering, partial and BRIN index variants | **Not adopted** | E19: planner ignored both covering indexes; BRIN made a date-range count 3x slower (physical order does not follow date) |

@@ -1,0 +1,86 @@
+{
+  "environment": {
+    "machine": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "cpu_count": 10,
+    "memory_gb": 16,
+    "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "1310728kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-18T06:56:11+00:00"
+  },
+  "as_of": "2026-10-18",
+  "baseline": {
+    "currency_count_unfiltered_ms": 341.6,
+    "currency_count_filtered_ms": 106.5,
+    "date_range_count_ms": 677.1,
+    "used_by_currency_count": false,
+    "used_by_date_range": false,
+    "views_ms": {
+      "summary": 3612,
+      "stats by department": 1845,
+      "role across countries": 2078,
+      "histogram": 2342,
+      "composition": 1766,
+      "outliers": 6423
+    },
+    "insert_100k_seconds": 12.03
+  },
+  "I1 partial covering (currency, id) WHERE active": {
+    "currency_count_unfiltered_ms": 263.2,
+    "currency_count_filtered_ms": 109.0,
+    "date_range_count_ms": 729.9,
+    "used_by_currency_count": false,
+    "used_by_date_range": false,
+    "views_ms": {
+      "summary": 3733,
+      "stats by department": 1985,
+      "role across countries": 2248,
+      "histogram": 2899,
+      "composition": 1964,
+      "outliers": 7534
+    },
+    "insert_100k_seconds": 12.48,
+    "build_seconds": 1.0,
+    "size_mb": 26.0
+  },
+  "I2 wide partial covering for the population": {
+    "currency_count_unfiltered_ms": 274.7,
+    "currency_count_filtered_ms": 116.7,
+    "date_range_count_ms": 935.0,
+    "used_by_currency_count": false,
+    "used_by_date_range": false,
+    "views_ms": {
+      "summary": 3451,
+      "stats by department": 2021,
+      "role across countries": 2193,
+      "histogram": 2943,
+      "composition": 1897,
+      "outliers": 6925
+    },
+    "insert_100k_seconds": 12.87,
+    "build_seconds": 1.0,
+    "size_mb": 55.5
+  },
+  "I3 BRIN on history effective_date": {
+    "currency_count_unfiltered_ms": 342.5,
+    "currency_count_filtered_ms": 112.4,
+    "date_range_count_ms": 2019.9,
+    "used_by_currency_count": false,
+    "used_by_date_range": true,
+    "views_ms": {
+      "summary": 3634,
+      "stats by department": 1887,
+      "role across countries": 2251,
+      "histogram": 2455,
+      "composition": 1996,
+      "outliers": 6802
+    },
+    "insert_100k_seconds": 12.25,
+    "build_seconds": 6.0,
+    "size_mb": 0.1
+  }
+}
