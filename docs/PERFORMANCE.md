@@ -642,6 +642,48 @@ The cost has a floor of about 25 s that barely depends on the range, because the
 
 ---
 
+## E17 — VACUUM and the visibility map
+
+Postgres can answer a count from an index alone (an index-only scan) only for pages it knows have no row versions hidden from some transaction: the *visibility map* records those pages, and `VACUUM` sets it. For any other page the scan has to visit the table ("Heap Fetches"). E10's plan for the directory's count showed `Heap Fetches: 20,005` even on a freshly built database. This measures what that costs, what ordinary writes do to it, and what restores it. `python -m scale_lab.e17_vacuum` on `acme_lab_1m`.
+
+**As found (before any change):** autovacuum has already run on every table, so 96.0% (history), 97.5% (current pay) and 96.6% (employees) of pages are marked all-visible. My expectation that a bulk load would leave the tables unvacuumed was wrong: since Postgres 13 autovacuum also triggers on inserts.
+
+**Hypotheses (written before running):**
+
+1. A manual `VACUUM` brings the remaining pages to about 100% all-visible and cuts `Heap Fetches` on the count queries to near zero, but speeds them up only by **10–30%**, since just 3–4% of pages need a visit.
+2. **Writes degrade it quickly and by more:** updating 5% of employees (50,000 rows) spreads that over most of the table's pages, so the same count slows by **1.5× or more**.
+3. **Autovacuum will not repair that on its own:** its trigger for updates is 20% of the table (plus 50 rows), so a 5% burst leaves the table degraded indefinitely, until a manual `VACUUM` or a larger change.
+
+**Results** (`acme_lab_1m`; median of 5; "fetches" are the index-only scan's heap fetches from `EXPLAIN ANALYZE`; `VACUUM (ANALYZE)` of `employees` and `current_compensation` took 4.4 s):
+
+| Moment | Count all employees | Count active employees | Currency usage (E15's 11%) |
+| --- | --- | --- | --- |
+| As found (autovacuum had run) | 23.2 ms, 5,013 fetches | 24.5 ms, 4,426 | 735 ms |
+| After a manual `VACUUM` | 32.6 ms, **0** | 26.3 ms, 0 | 524 ms |
+| After updating 5% of employees (50,000 rows) | **196 ms, 1,049,258 fetches** | **75.6 ms, 905,201** | 656 ms |
+| 180 s later, nothing done | **164 ms, 1,049,220** | **69.3 ms, 905,201** | 520 ms |
+| After `VACUUM` again | 32.5 ms, 0 | 25.1 ms, 0 | 577 ms |
+
+The update left 50,000 dead tuples; 180 s later 49,258 were still there. (The "pages all visible" percentage in `pg_class` is only refreshed by `VACUUM`/`ANALYZE`, so it kept saying 100% after the updates; the fetch counts are the true signal.)
+
+**Verdicts:**
+
+1. **Refuted.** The manual `VACUUM` removed the 5,000 heap fetches but did not make the counts faster (23 → 33 ms and 25 → 26 ms are noise): 5,000 fetches on a million-row count is 0.5% of the rows. As found, the database was already in good shape.
+2. **Confirmed, and worse than predicted.** Updating 5% of employees made the count **6× slower** (33 → 196 ms) and the active count **3× slower**. Fifty thousand updates touched nearly every one of the table's 33,800 pages (about 1.5 rows per page), so about every row needed a heap fetch: 1.05 M fetches, almost the whole table.
+3. **Confirmed.** Three minutes later autovacuum had done nothing and the counts were just as slow. Its trigger for updates is 20% of the table plus 50 rows (about 200,000 here), so a 5% burst is invisible to it. Only a manual `VACUUM` (4.4 s) restored it.
+
+**Currency usage did not change** (520–735 ms every time) because its plan does not use an index-only scan on `employees`, so the visibility map cannot help it. Its cost is elsewhere: scanning 862k active employees and probing `current_compensation` for each.
+
+**What this means:**
+
+- A table that is updated in small, scattered amounts loses its index-only scans without anything being wrong or logged. At 1M employees it costs 100–160 ms per directory request (the exact total counts). At 10,000 employees the same effect is a fraction of a millisecond, so nothing is needed by default.
+- Remedies when it matters: run `VACUUM` after a bulk update or import, or lower `autovacuum_vacuum_scale_factor` on `employees` (for example 0.02 triggers at about 20,000 changes here) so it repairs itself within a minute. Both are operational settings; no application change.
+- Manual `VACUUM` is cheap (4.4 s for two tables with 5.3 M rows) and does not block reads or writes.
+
+**Not done:** `compensation_records` (the 2.9 GB history) was not vacuumed or updated: it is append-only, so it cannot lose its visibility map this way. A real workload that updates employees, such as relocations and status changes, is the case that does.
+
+---
+
 ## Summary — what the lab confirmed or changed
 
 | Decision | Status | Evidence |
@@ -665,3 +707,4 @@ The cost has a floor of about 25 s that barely depends on the range, because the
 | Directory total count (exact `count(*)`) | **Kept exact** | E15: 0.2-0.7% of database time in a realistic mix; pay insights are 98.8% |
 | Where database time goes | Recorded | E15: pay-changes report 49%, per-view currency count 11%, the six other pay-insight statements 4-11% each |
 | Pay-changes report on narrow date ranges | **Not changed** (restricting the history window refuted) | E16: month 1.4× faster but year 2-3× slower; real fix is a stored change log; accepted for now |
+| VACUUM and the visibility map | Recorded; no code change | E17: a 5% update burst made counts 3-6x slower at 1M and autovacuum did not repair it; a 4.4 s manual VACUUM did. Irrelevant at 10k |

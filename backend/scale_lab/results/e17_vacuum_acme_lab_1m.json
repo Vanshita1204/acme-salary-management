@@ -1,0 +1,186 @@
+{
+  "environment": {
+    "machine": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "cpu_count": 10,
+    "memory_gb": 16,
+    "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "1310728kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-18T06:21:44+00:00"
+  },
+  "as_found": {
+    "state": {
+      "employees": {
+        "pages": 33797,
+        "all_visible_percent": 96.6,
+        "dead_tuples": 0,
+        "modified_since_analyze": 0,
+        "last_autovacuum": "18:38:52",
+        "last_vacuum": null
+      },
+      "current_compensation": {
+        "pages": 40553,
+        "all_visible_percent": 97.5,
+        "dead_tuples": 0,
+        "modified_since_analyze": 0,
+        "last_autovacuum": "10:58:34",
+        "last_vacuum": null
+      }
+    },
+    "queries": {
+      "count all employees": {
+        "median_ms": 23.2,
+        "heap_fetches": 5013
+      },
+      "count active employees": {
+        "median_ms": 24.5,
+        "heap_fetches": 4426
+      },
+      "currency usage (the pay-insight context)": {
+        "median_ms": 734.7,
+        "heap_fetches": 0
+      }
+    }
+  },
+  "vacuum_seconds": 4.4,
+  "after_vacuum": {
+    "state": {
+      "employees": {
+        "pages": 22115,
+        "all_visible_percent": 100.0,
+        "dead_tuples": 0,
+        "modified_since_analyze": 0,
+        "last_autovacuum": "18:38:52",
+        "last_vacuum": "06:18:03"
+      },
+      "current_compensation": {
+        "pages": 40553,
+        "all_visible_percent": 100.0,
+        "dead_tuples": 0,
+        "modified_since_analyze": 0,
+        "last_autovacuum": "10:58:34",
+        "last_vacuum": "06:18:05"
+      }
+    },
+    "queries": {
+      "count all employees": {
+        "median_ms": 32.6,
+        "heap_fetches": 0
+      },
+      "count active employees": {
+        "median_ms": 26.3,
+        "heap_fetches": 0
+      },
+      "currency usage (the pay-insight context)": {
+        "median_ms": 523.5,
+        "heap_fetches": 0
+      }
+    }
+  },
+  "after_5_percent_updates": {
+    "state": {
+      "employees": {
+        "pages": 22115,
+        "all_visible_percent": 100.0,
+        "dead_tuples": 50000,
+        "modified_since_analyze": 50000,
+        "last_autovacuum": "18:38:52",
+        "last_vacuum": "06:18:03"
+      },
+      "current_compensation": {
+        "pages": 40553,
+        "all_visible_percent": 100.0,
+        "dead_tuples": 0,
+        "modified_since_analyze": 0,
+        "last_autovacuum": "10:58:34",
+        "last_vacuum": "06:18:05"
+      }
+    },
+    "queries": {
+      "count all employees": {
+        "median_ms": 196.4,
+        "heap_fetches": 1049258
+      },
+      "count active employees": {
+        "median_ms": 75.6,
+        "heap_fetches": 905201
+      },
+      "currency usage (the pay-insight context)": {
+        "median_ms": 656.0,
+        "heap_fetches": 0
+      }
+    }
+  },
+  "after_wait": {
+    "state": {
+      "employees": {
+        "pages": 22115,
+        "all_visible_percent": 100.0,
+        "dead_tuples": 49258,
+        "modified_since_analyze": 50000,
+        "last_autovacuum": "18:38:52",
+        "last_vacuum": "06:18:03"
+      },
+      "current_compensation": {
+        "pages": 40553,
+        "all_visible_percent": 100.0,
+        "dead_tuples": 0,
+        "modified_since_analyze": 0,
+        "last_autovacuum": "10:58:34",
+        "last_vacuum": "06:18:05"
+      }
+    },
+    "queries": {
+      "count all employees": {
+        "median_ms": 164.4,
+        "heap_fetches": 1049220
+      },
+      "count active employees": {
+        "median_ms": 69.3,
+        "heap_fetches": 905201
+      },
+      "currency usage (the pay-insight context)": {
+        "median_ms": 520.4,
+        "heap_fetches": 0
+      }
+    }
+  },
+  "after_second_vacuum": {
+    "state": {
+      "employees": {
+        "pages": 23205,
+        "all_visible_percent": 100.0,
+        "dead_tuples": 0,
+        "modified_since_analyze": 0,
+        "last_autovacuum": "18:38:52",
+        "last_vacuum": "06:21:38"
+      },
+      "current_compensation": {
+        "pages": 40553,
+        "all_visible_percent": 100.0,
+        "dead_tuples": 0,
+        "modified_since_analyze": 0,
+        "last_autovacuum": "10:58:34",
+        "last_vacuum": "06:18:05"
+      }
+    },
+    "queries": {
+      "count all employees": {
+        "median_ms": 32.5,
+        "heap_fetches": 0
+      },
+      "count active employees": {
+        "median_ms": 25.1,
+        "heap_fetches": 0
+      },
+      "currency usage (the pay-insight context)": {
+        "median_ms": 576.5,
+        "heap_fetches": 0
+      }
+    }
+  }
+}
