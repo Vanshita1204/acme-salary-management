@@ -367,6 +367,54 @@ Per request at one client (p50): first page 162 → 46 ms, department + country 
 
 ---
 
+## E11 — Rewriting the pay-insight queries
+
+E9 left the pay-insight views as the slowest part of the app at 1M employees (7.5–10 s each, outliers 42 s). This experiment profiles each view per SQL statement, rewrites what the profile points at, and measures again, on `acme_lab_1m` with the cache off (a fresh session per request; one run per view, so differences under about 10% are noise). The prepared-statement fix from E10 is in place for both columns.
+
+**Method note.** Unlike E1–E10, the hypotheses below were formed *from the profile*, not before it: the first run of the profile is the evidence that suggested them.
+
+**What the profile showed.**
+
+1. Every view runs a "context" statement before its own, to learn which currencies were used and how many employees lack a rate. It recomputed the whole population (every employee's total pay, converted) just to count currencies: **3.5–7.3 s of every view**.
+2. Outliers evaluated the population **twice** inside one statement (once for the peer medians, once for the rows): the plan shows two nested pay aggregations and 6.3 M buffers touched. A subquery used twice is computed twice; a CTE used twice is computed once.
+3. Histogram used two statements (min/max, then the bins) that each recomputed the population.
+4. The pay-changes report matches about 2 M change events (nearly every employee has one in a year) against every compensation record by employee, a 41 M-pair merge join on top of a window over 15.9 M records.
+
+**What was changed** (`app/services/analytics.py`):
+
+- `prepare()` now gets the currency information from a count of employees by currency (an index-assisted scan of `employees` with an `EXISTS` on counted pay) plus the stored rates, in Python: an employee is left out of the totals only if their currency, or the reporting currency, has no rate. Same result, no pay totals needed.
+- Outliers: the shared priced population is a CTE (computed once).
+- Histogram: one statement; the bounds and the bin counts share one CTE.
+- Summary: one statement (E-earlier), unchanged here.
+
+**Results** (server-side statements per request, 1M employees):
+
+| View | Before | After | Speed-up |
+| --- | --- | --- | --- |
+| Summary | 13.4 s | 6.2 s | 2.2× |
+| Pay by group (stats by department) | 8.8 s | 4.8 s | 1.8× |
+| Same role across countries | 8.1 s | 4.5 s | 1.8× |
+| Pay distribution (histogram) | 10.8 s | 4.7 s | 2.3× |
+| Outliers | 39.8 s | 8.3 s | **4.8×** |
+| What pay is made of (composition) | 7.9 s | 4.3 s | 1.8× |
+| Pay changes (one year) | 46.0 s | 46.0 s | none |
+
+The context statement fell from 3.5–7.3 s to 0.6–0.7 s. All 582 tests pass, including the analytics tests that check the numbers (excluded-for-no-rate counts, reporting-currency handling, single-value and empty histograms).
+
+**Attempts that did not work:**
+
+- *Pay changes: limiting the history window to employees with an event in the range* made the report **slower, 46 s to 128 s**, because the planner chose a worse join, and it could not have helped anyway: nearly every employee has an event in a year. Reverted.
+- *Pay changes: disabling the merge join* (`enable_mergejoin = off`) gave 50 s: no better. The cost is the algorithm (a 15.9 M-row window, then 41 M pairs), not the join method.
+- *Per-employee totals with a parallel hash aggregate* instead of the ordered aggregate: 2.5 s against 2.3 s. Not better.
+
+**What is left.** Each view still spends 2.3 s (4.3 M current-pay rows aggregated into 1 M per-employee totals) plus the view's own aggregation, about 4.3–4.8 s in total. A rewrite cannot remove that pass; storing the per-employee totals does (see E3's deferred `employee_totals` and E5's materialized view, which was 4.5–11× faster). The pay-changes report needs a different algorithm (running totals from the record history) or a stored change log.
+
+**Trade-offs of what was done:** the currency/rate logic now exists in two places (SQL for the totals, Python for the context), so they must change together; the tests exercise both. CTEs used twice are materialised, which costs memory for large populations but was a clear win here.
+
+**Next:** pre-aggregation, a stored per-employee total kept up to date as pay changes, then re-measure these views.
+
+---
+
 ## Summary — what the lab confirmed or changed
 
 | Decision | Status | Evidence |
@@ -383,3 +431,4 @@ Per request at one client (p50): first page 162 → 46 ms, department + country 
 | Partition compensation records by date | Rejected for now | E8: reports 2.2–3.7× faster, lookups 1.6–3.5× slower, `id` can't stay unique |
 | Pool size and worker count for the directory | No change needed | E9: workers 1 → 4 and pool 15 → 50 gave the same ~13 req/s; the database is the bottleneck. More connections caused 503s from shared-memory exhaustion (fixed in E14) |
 | Prepared statements on pooled connections | **Changed** (`prepare_threshold=None`) | E10: promotion 1.4 ms → 153 ms after ~10 requests on a connection; single-client directory latency 2–3.5× lower after the fix |
+| Pay-insight queries at 1M employees | **Changed** (context query, CTEs) | E11: 1.8–4.8× faster (outliers 39.8 s to 8.3 s); a full pass over per-employee pay (~2.3 s) remains; pay-changes report unchanged at 46 s |

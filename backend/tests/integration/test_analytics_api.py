@@ -294,6 +294,11 @@ def test_histogram_of_one_value_is_one_bin(client, world):
     assert [b["count"] for b in result["bins"]] == [1]
 
 
+def test_histogram_of_nobody_has_no_bins(client, world):
+    result = get(client, world, "histogram", q="nobody-has-this-name")
+    assert result["bins"] == []
+
+
 @pytest.mark.parametrize("bins", [0, 101])
 def test_histogram_bin_count_is_bounded(client, world, bins):
     response = client.get("/analytics/histogram", params={"bins": bins})
