@@ -558,6 +558,51 @@ About **10–20% more throughput and 20–35% lower median latency** at 10 clien
 
 ---
 
+## E15 — Which statements cost the most (`pg_stat_statements`)
+
+E9 to E14 each started from one endpoint. This looks at the database as a whole: it runs a realistic mix of requests against the real server on `acme_lab_1m`, with the extension recording every normalised statement, then ranks them by total time. The point is to find anything heavy that no earlier experiment looked at. `python -m scale_lab.e15_statements`. The lab database is read-only for this run (no pay changes or imports), so write-path statements are not covered.
+
+**Mix:** a page load (the 8 reference lists the frontend fetches), directory pages and searches, an employee profile, a filtered CSV export, the six pay-insight views and a one-month pay-changes report, with a few clients for 60 seconds.
+
+**Hypotheses (written before running):**
+
+1. The **pay-insight statements** (the population query, the currency count and the pay-changes report) account for **over 80%** of total database time, though they are a small share of the request count.
+2. **No statement outside the analytics and directory code** takes more than 5% of total time.
+3. The **reference lists** (departments, titles, levels, countries, currencies, companies, catalog) are called far more often than anything else but cost **under 1%** in total.
+
+**Results** (`acme_lab_1m`, one server, 4 clients for 90 s: 174 requests, 0 errors; the database spent **417 s** executing statements, spread across parallel workers). Top statements by total time:
+
+| Statement | Share of database time | Total | Calls | Mean per call |
+| --- | --- | --- | --- | --- |
+| Pay-changes report (one-month range) | 49.4% | 206.1 s | 8 | 25,768 ms |
+| Currency count (run first by every pay-insight view) | 11.4% | 47.7 s | 48 | 994 ms |
+| Outliers (main statement) | 11.2% | 46.6 s | 8 | 5,823 ms |
+| Summary (main statement) | 6.6% | 27.7 s | 8 | 3,462 ms |
+| Composition | 6.0% | 25.1 s | 8 | 3,139 ms |
+| Same role across countries | 4.9% | 20.5 s | 8 | 2,559 ms |
+| Histogram | 4.8% | 20.1 s | 8 | 2,510 ms |
+| Stats by department | 4.5% | 18.9 s | 8 | 2,360 ms |
+
+Everything else together is **under 1.5%**. The next statements down: the directory's count with a department filter (0.7%, 385 ms mean), the unfiltered count (0.2%, 101 ms), the directory page (0.1%, 38 ms), a profile's totals (under 0.1%), and the nine reference lists (too small to appear in the top 15).
+
+**Verdicts:**
+
+1. **Confirmed, and more so than expected.** The pay-insight statements are **98.8%** of database time (I predicted over 80%).
+2. **Confirmed.** Nothing outside the analytics code exceeds 1%; the largest directory statement is 0.7%.
+3. **Confirmed.** The reference lists cost nothing worth measuring.
+
+**New findings:**
+
+- **The pay-changes report is half of all database time**, at 25.8 s per call even for a **one-month** range. E11 saw 46 s for a year. The one-month result means its cost is the window over all history, not the number of events, and that it has not been tried with a narrow range: E11's "only employees with an event" filter was tested on a one-year range only (where nearly everyone has an event).
+- **The currency count is the second most expensive statement (11.4%)** although it only reports which currencies are in use. Every view runs it first, and it costs about 1 s per call under load (0.6 s alone).
+- **Decision on the directory count (E10): leave it exact.** In this mix it is 0.2–0.7% of database time. An approximate count would change what the page shows to save almost nothing, except for common searches (about 500 ms), which E13's indexes only help for 3+ characters.
+
+**Limits of this run:** read-only (no pay changes, imports or CSV imports), one server process, a fixed request mix that weights the pay insights equally with page loads. A real user mix would put less weight on the pay insights, but they are still the heaviest requests by two orders of magnitude.
+
+**Next:** (1) the pay-changes report for narrow date ranges; (2) the currency count, which can use the stored totals instead of scanning pay.
+
+---
+
 ## Summary — what the lab confirmed or changed
 
 | Decision | Status | Evidence |
@@ -578,3 +623,5 @@ About **10–20% more throughput and 20–35% lower median latency** at 10 clien
 | Stored per-employee totals for pay insights | **Changed** (materialized view, refreshed after writes) | E12: views 1.2–2.3× faster again (cumulative 3.3–5.7×); refresh 3–7 s, 71 MB; staleness of about 16 s after a write |
 | Trigram indexes for directory text search | **Changed** (migration `0014`) | E13: searches of 3+ characters 8–180× faster at 1M (rare terms 9–28 ms, was 1.6–2.4 s); +39% bulk-insert time, 161 MB |
 | Postgres settings for the local database | **Changed** (`shm_size` 512 MB, `shared_buffers` 1 GB) | E14: 503 errors under concurrent load gone (42 to 0); directory +10-20% throughput; views and `work_mem` unchanged |
+| Directory total count (exact `count(*)`) | **Kept exact** | E15: 0.2-0.7% of database time in a realistic mix; pay insights are 98.8% |
+| Where database time goes | Recorded | E15: pay-changes report 49%, per-view currency count 11%, the six other pay-insight statements 4-11% each |

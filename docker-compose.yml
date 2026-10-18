@@ -6,7 +6,12 @@ services:
     shm_size: 512mb
     # A larger buffer cache: ~10-20% more directory throughput (Scale Lab E14). work_mem is
     # left at its default: raising it removed the sort spills but didn't make anything faster.
-    command: postgres -c shared_buffers=1GB
+    # pg_stat_statements: which statements cost the most in total (an ops/diagnostics aid,
+    # not something the app uses; see Scale Lab E15).
+    command: >
+      postgres -c shared_buffers=1GB
+      -c shared_preload_libraries=pg_stat_statements
+      -c pg_stat_statements.track=all
     env_file:
       - backend/.env
     ports:
