@@ -22,6 +22,7 @@ from app.models import (
     CurrentCompensation,
     Employee,
 )
+from app.services.employee_totals import stale as totals_stale
 from app.services.errors import Problem, ServiceError
 
 TERMINATED = "terminated"
@@ -242,4 +243,6 @@ def promote_due_records(session: Session, today: date | None = None) -> int:
             < tuple_(excluded.effective_date, excluded.compensation_record_id),
         ).returning(current.compensation_record_id)
     ).all()
+    if moved:
+        totals_stale.set()  # current pay changed without an API write
     return len(moved)

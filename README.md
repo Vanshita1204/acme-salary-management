@@ -42,12 +42,13 @@ One container serves the built frontend and the API (the API under `/api`), so t
 
 **On Render (free tier):** New → Blueprint → pick this repo. `render.yaml` creates the web service from the `Dockerfile` and a managed Postgres, and sets `DATABASE_URL` from it.
 
-**Anywhere else:** build the `Dockerfile` and run it with `DATABASE_URL` pointing at a Postgres 16 database (`postgres://…` URLs are accepted). Optional: `EXCHANGE_RATE_API_URL` (defaults to open.er-api.com), `PORT`, `ANALYTICS_CACHE_SECONDS` (default 300; `0` turns the pay-insight cache off).
+**Anywhere else:** build the `Dockerfile` and run it with `DATABASE_URL` pointing at a Postgres 16 database (`postgres://…` URLs are accepted). Optional: `EXCHANGE_RATE_API_URL` (defaults to open.er-api.com), `PORT`, `ANALYTICS_CACHE_SECONDS` (default 300; `0` turns the pay-insight cache off), `ANALYTICS_TOTALS_VIEW` (default on; `false` makes Pay insights compute totals live instead of reading the materialized view), `TOTALS_REFRESH_DELAY` (seconds to wait after a change before refreshing the view, default 10), `DB_POOL_SIZE`, `DB_MAX_OVERFLOW`, `DB_POOL_TIMEOUT`.
 
 On every start the container runs `python -m app.bootstrap`, then the daily job in the background, then the server:
 
 1. `alembic upgrade head`
 2. reference data, compensation catalog, change reasons, org structure, companies (insert-only, safe to repeat)
+   (and `employee_totals`, a materialized view of every employee's annual total that the Pay insights read; it is refreshed here, by the daily job and a few seconds after any change made through the API)
 3. the first live exchange-rate fetch (a provider outage is logged, not fatal; the daily job retries)
 4. 10,000 synthetic employees, **only if there are none**: history is append-only, so it is never reseeded
 

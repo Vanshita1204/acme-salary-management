@@ -35,6 +35,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, array, array_agg
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.domain.analytics import MIN_PEER_GROUP_SIZE, OUTLIER_HIGH, OUTLIER_LOW
 from app.domain.compensation import NON_INCREASE_REASONS
 from app.models import (
@@ -56,6 +57,7 @@ from app.services.directory import (
     apply_filters,
     latest_rate_rows,
 )
+from app.services.employee_totals import employee_totals
 from app.services.errors import Problem, ServiceError
 from app.services.exchange_rates import latest_rates, require_supported_currency
 from app.services.relocation import RELOCATION
@@ -102,7 +104,12 @@ def population(session: Session, query: DirectoryQuery, reporting: str) -> Selec
     """One row per active, matching employee with current compensation:
     ids for grouping, `total_local` (employee's currency) and `total` (reporting
     currency, NULL when a rate is missing)."""
-    totals = annual_totals().subquery()
+    # Stored totals (fast, as fresh as the last refresh) or computed now (always current).
+    totals = (
+        select(employee_totals.c.employee_id, employee_totals.c.total).subquery()
+        if get_settings().analytics_totals_view
+        else annual_totals().subquery()
+    )
     rates = latest_rate_rows().subquery()
     reporting_rate = (
         select(rates.c.rate_to_usd)

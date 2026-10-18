@@ -18,6 +18,13 @@ class Settings(BaseSettings):
     db_pool_size: int = 5
     db_max_overflow: int = 10
     db_pool_timeout: float = 30
+    # Pay-insight views read each employee's total from the `employee_totals` materialized
+    # view (fast, as fresh as its last refresh) instead of aggregating all current pay per
+    # request (always current). Off by default in tests, which check the live semantics.
+    analytics_totals_view: bool = True
+    # Seconds the API waits after a write before refreshing the view, so a burst of writes
+    # (an import, a run of edits) causes one refresh.
+    totals_refresh_delay: float = 10
     # How long an identical pay-insight request is answered from memory (0 turns it off).
     analytics_cache_seconds: float = 300
 

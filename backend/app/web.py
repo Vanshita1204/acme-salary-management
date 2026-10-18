@@ -12,6 +12,8 @@ isn't a built file gets `index.html`, so client-side routes survive a page reloa
 """
 
 import os
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -23,9 +25,18 @@ from app.main import app as api
 DEFAULT_DIST = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    """A mounted app's own lifespan doesn't run, so run the API's from here."""
+    async with api.router.lifespan_context(api):
+        yield
+
+
 def create_site(dist: Path | None = None) -> FastAPI:
     dist = dist or Path(os.environ.get("FRONTEND_DIST", DEFAULT_DIST))
-    site = FastAPI(title="ACME Salary Management", docs_url=None, redoc_url=None)
+    site = FastAPI(
+        title="ACME Salary Management", docs_url=None, redoc_url=None, lifespan=lifespan
+    )
 
     @site.get("/health", include_in_schema=False)
     def health() -> dict[str, str]:

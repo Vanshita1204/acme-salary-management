@@ -415,6 +415,56 @@ The context statement fell from 3.5–7.3 s to 0.6–0.7 s. All 582 tests pass, 
 
 ---
 
+## E12 — Pre-aggregation with a materialized view
+
+After E11 every pay-insight view still began with the same pass: aggregating all of `current_compensation` (4.3 M rows at 1M employees) into one annual total per employee, **2.3 s** (a parallel hash aggregate was no faster). Those totals change only when pay changes. This experiment stores them in a materialized view, `employee_totals` (migration `0013`), and reads them instead.
+
+**Hypotheses (written before measuring):**
+
+1. Each view gets faster by about the cost of the pass it no longer does, roughly **2 s**, not the 4.5–11× that E5 measured against unrewritten queries, because E11 already removed most of the repeated work.
+2. A refresh costs **a few seconds** at 1M (E5 measured 5.3 s plain and 8.4–8.9 s concurrent for a larger view) and the view is **under 100 MB**.
+3. The price is **staleness**: a pay change is invisible to the pay insights until the next refresh.
+
+**Design:**
+
+- `employee_totals(employee_id, total)`: counted types only, in the employee's own currency, with a unique index so it can be refreshed `CONCURRENTLY` (readers never wait).
+- `population()` reads it when `ANALYTICS_TOTALS_VIEW` is on (default); off falls back to the live aggregate. Tests run with it off (they check the live semantics) and one test compares the two.
+- Refreshed: at bootstrap, at the end of the daily job (promotion changes pay without an API write), and by a background thread in the API **10 s after the latest write** (`TOTALS_REFRESH_DELAY`), so a burst of writes costs one refresh; a read that promotes a due future-dated change also marks it stale. The response cache is emptied after each refresh.
+- Refreshing needs ownership of the view, which the application's least-privilege role lacks, so the refresh runs through a `SECURITY DEFINER` function the role may call (it still can't alter or drop the view).
+
+**Results** (1M employees, server time per view, cache off, one run each; live = flag off):
+
+| View | Live (after E11) | Stored view | Speed-up |
+| --- | --- | --- | --- |
+| Summary | 6.9 s | 3.8 s | 1.8× |
+| Pay by group (stats by department) | 5.2 s | 2.2 s | 2.3× |
+| Same role across countries | 4.8 s | 2.4 s | 2.0× |
+| Pay distribution (histogram) | 4.8 s | 2.7 s | 1.8× |
+| Outliers | 8.6 s | 7.0 s | 1.2× |
+| What pay is made of (composition) | 4.4 s | 2.1 s | 2.1× |
+
+Cumulative against the E9/E11 starting point (13.4 / 8.8 / 8.1 / 10.8 / 39.8 / 7.9 s): summary 3.5×, stats 4.0×, role 3.3×, histogram 4.0×, **outliers 5.7×**, composition 3.8×.
+
+- **Refresh:** 6.0–6.8 s concurrent (readers not blocked), 3.3 s plain. **Size:** 71 MB (1,000,000 rows).
+- **Correctness:** the stored totals gave identical responses to the live computation for summary, stats, histogram, outliers and composition (a test, on the same data). Another test shows the snapshot behaviour: after a pay change the view still returns the old totals until refreshed, then the new ones. On the dev database a new hire was invisible for the 3 s refresh delay used in the check, then counted.
+
+**Verdicts:**
+
+1. **Confirmed.** The gain is 1.2–2.3×, about the 2.3 s pass, not E5's 4.5–11×. Outliers gained least (7.0 s): its time is in the peer-group medians and the join over 862k rows, not in the totals.
+2. **Confirmed.** Refresh 3–7 s, size 71 MB.
+3. **Confirmed, with a design to bound it.** Staleness is about the refresh delay plus the refresh itself (10 s + ~6 s at 1M). Pay changes made outside the API and not through a promotion would wait for the daily run. The directory is *not* affected: it still computes the totals of the 50 people on a page live, and the response cache is emptied on each refresh.
+
+**Trade-offs:**
+
+- Two sources of the same number (the live aggregate and the view) must be kept in step; the parity test guards that, but a new write path that changes pay must mark the view stale or wait for the daily refresh.
+- Refresh work (6 s of database CPU at 1M) happens after writes; a steady stream of writes means a refresh about every 10 s. Pointless for this app's write rate, but it would need a different design (incremental maintenance) at much higher write volume.
+- Extra moving parts: a thread, a function with elevated privileges, a migration.
+- The view is a 71 MB copy that the daily job and every write burst must rebuild.
+
+**Left:** each view still costs 2–7 s at 1M. What remains is the view's own aggregation (percentile medians over 862k employees, peer groups, conversion), the 0.6 s per-view currency count, and the pay-changes report (46 s, unchanged). A second pre-aggregation (per-group stats) or sampling would be the next step.
+
+---
+
 ## Summary — what the lab confirmed or changed
 
 | Decision | Status | Evidence |
@@ -432,3 +482,4 @@ The context statement fell from 3.5–7.3 s to 0.6–0.7 s. All 582 tests pass, 
 | Pool size and worker count for the directory | No change needed | E9: workers 1 → 4 and pool 15 → 50 gave the same ~13 req/s; the database is the bottleneck. More connections caused 503s from shared-memory exhaustion (fixed in E14) |
 | Prepared statements on pooled connections | **Changed** (`prepare_threshold=None`) | E10: promotion 1.4 ms → 153 ms after ~10 requests on a connection; single-client directory latency 2–3.5× lower after the fix |
 | Pay-insight queries at 1M employees | **Changed** (context query, CTEs) | E11: 1.8–4.8× faster (outliers 39.8 s to 8.3 s); a full pass over per-employee pay (~2.3 s) remains; pay-changes report unchanged at 46 s |
+| Stored per-employee totals for pay insights | **Changed** (materialized view, refreshed after writes) | E12: views 1.2–2.3× faster again (cumulative 3.3–5.7×); refresh 3–7 s, 71 MB; staleness of about 16 s after a write |

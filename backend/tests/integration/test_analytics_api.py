@@ -10,6 +10,7 @@ import httpx
 import pytest
 from sqlalchemy import select, text
 
+from app.core.config import get_settings
 from app.domain.analytics import EmployeePay, composition, find_outliers
 from app.jobs.daily import run_daily
 from app.models import ChangeReason, CompensationType, ExchangeRate
@@ -517,3 +518,52 @@ def test_amounts_already_in_the_reporting_currency_need_no_rate(db, client, worl
     other = get(client, world, "summary", reporting_currency="EUR")
     assert other["headcount"] == len(eur_people)
     assert other["excluded_no_rate"] == len(PEOPLE) - len(eur_people)
+
+
+# --- the employee_totals materialized view (Scale Lab E12) ---
+
+
+def refresh_view(db):
+    db.execute(text("SELECT refresh_employee_totals()"))
+
+
+@pytest.fixture
+def totals_view():
+    """Read totals from the materialized view for the duration of one test."""
+    settings = get_settings()
+    settings.analytics_totals_view = True
+    yield
+    settings.analytics_totals_view = False
+
+
+def test_the_stored_totals_give_the_same_answers_as_the_live_computation(
+    db, client, world, totals_view
+):
+    views = [
+        ("summary", {}),
+        ("stats", {"group_by": "country"}),
+        ("histogram", {"bins": 7}),
+        ("outliers", {}),
+        ("composition", {}),
+    ]
+    refresh_view(db)
+    stored = [get(client, world, view, **params) for view, params in views]
+    get_settings().analytics_totals_view = False
+    live = [get(client, world, view, **params) for view, params in views]
+
+    assert stored == live
+
+
+def test_the_stored_totals_are_a_snapshot_until_refreshed(db, client, world, totals_view):
+    refresh_view(db)
+    snapshot = get(client, world, "summary")
+    # A pay change after the snapshot (this person's housing allowance is replaced).
+    add(client, world["people"]["gb1"], world["types"][("allowance", "housing")].id, world["reasons"]["new_hire"], HIRE, 10)
+
+    before_refresh = get(client, world, "summary")
+    refresh_view(db)
+    after_refresh = get(client, world, "summary")
+
+    assert before_refresh == snapshot  # still the old totals
+    assert after_refresh["total_cost"] != snapshot["total_cost"]
+    assert after_refresh["headcount"] == snapshot["headcount"]

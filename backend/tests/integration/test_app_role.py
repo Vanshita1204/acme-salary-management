@@ -407,3 +407,15 @@ def test_grants_start_by_taking_everything_away():
 def test_role_names_are_checked_before_they_reach_sql(name):
     with pytest.raises(ValueError):
         grant_statements(name)
+
+
+def test_the_app_role_can_read_and_refresh_the_totals_view_but_not_change_it(db, app_role):
+    become(db, app_role)
+    assert db.scalar(text("SELECT count(*) FROM employee_totals")) >= 0
+    db.execute(text("SELECT refresh_employee_totals()"))  # runs as the owner
+    message = denied(db, "DELETE FROM employee_totals")
+    assert "permission denied" in message or "cannot change" in message, message
+    message = denied(db, "REFRESH MATERIALIZED VIEW employee_totals")
+    assert "must be owner" in message or "permission denied" in message, message
+    message = denied(db, "DROP MATERIALIZED VIEW employee_totals")
+    assert "must be owner" in message or "permission denied" in message, message

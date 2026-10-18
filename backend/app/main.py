@@ -1,4 +1,8 @@
+import logging
+import threading
 import time
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
@@ -17,10 +21,45 @@ from app.api import (
 )
 from app.core.cache import CachedResponse, ResponseCache
 from app.core.config import get_settings
-from app.db.session import QueryStats, query_stats
+from app.db.session import QueryStats, SessionLocal, query_stats
+from app.services.employee_totals import refresh_totals
+from app.services.employee_totals import stale as totals_stale
 from app.services.errors import ServiceError
 
-app = FastAPI(title="ACME Salary Management")
+logger = logging.getLogger(__name__)
+
+def refresh_totals_when_stale(delay: float, stop: threading.Event) -> None:
+    """Rebuild the totals view `delay` seconds after the latest write, so a burst of
+    writes costs one refresh. Then drop cached insight answers, which were built from the
+    old view."""
+    while not stop.is_set():
+        if not totals_stale.wait(timeout=1):
+            continue
+        stop.wait(delay)  # let a burst of writes finish
+        totals_stale.clear()
+        try:
+            with SessionLocal() as session:
+                refresh_totals(session)
+            response_cache.invalidate()
+        except Exception:  # the view stays as it was; the next write or daily run retries
+            logger.exception("could not refresh employee_totals")
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+    stop = threading.Event()
+    settings = get_settings()
+    if settings.use_totals_view:
+        threading.Thread(
+            target=refresh_totals_when_stale,
+            args=(settings.totals_refresh_delay, stop),
+            daemon=True,
+        ).start()
+    yield
+    stop.set()
+
+
+app = FastAPI(title="ACME Salary Management", lifespan=lifespan)
 
 
 response_cache = ResponseCache(get_settings().analytics_cache_seconds)
@@ -40,6 +79,7 @@ async def timing_and_cache(request: Request, call_next):
 
     if request.method not in ("GET", "HEAD"):
         response_cache.invalidate()
+        totals_stale.set()
     cacheable = (
         response_cache.enabled
         and request.method == "GET"
