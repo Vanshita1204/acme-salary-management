@@ -9,7 +9,8 @@ The directory searches full name, last name, email and employee code with ILIKE
 that matches few people read every row (1.6-2.4 s, Scale Lab E13). A pg_trgm GIN index per
 searched expression lets Postgres find the matching rows directly. The expressions are
 exactly those `app.services.directory.apply_filters` builds, or the planner won't use
-them. Terms shorter than 3 characters still scan: trigrams need 3.
+them. Terms shorter than 3 characters still scan: trigrams need 3. At 10,000 employees a
+search needs no index (15-26 ms), so the migration is deliberately forgiving.
 """
 
 from collections.abc import Sequence
@@ -31,13 +32,27 @@ INDEXES = {
 
 
 def upgrade() -> None:
-    op.execute("CREATE EXTENSION IF NOT EXISTS pg_trgm")
-    for name, expression in INDEXES.items():
-        op.execute(
-            f"CREATE INDEX {name} ON employees USING gin ({expression} gin_trgm_ops)"
-        )
+    # The indexes are an optimisation, not something the app needs to run: where the
+    # extension cannot be created (a managed database that doesn't allow it), skip them
+    # instead of failing the whole migration, and with it the app's start-up.
+    definitions = "; ".join(
+        f"EXECUTE $q$CREATE INDEX {name} ON employees USING gin ({expression} gin_trgm_ops)$q$"
+        for name, expression in INDEXES.items()
+    )
+    op.execute(
+        f"""
+        DO $$
+        BEGIN
+            CREATE EXTENSION IF NOT EXISTS pg_trgm;
+            {definitions};
+        EXCEPTION WHEN OTHERS THEN
+            RAISE NOTICE 'trigram search indexes skipped: %', SQLERRM;
+        END
+        $$
+        """
+    )
 
 
 def downgrade() -> None:
     for name in INDEXES:
-        op.execute(f"DROP INDEX {name}")
+        op.execute(f"DROP INDEX IF EXISTS {name}")

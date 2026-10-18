@@ -428,8 +428,8 @@ After E11 every pay-insight view still began with the same pass: aggregating all
 **Design:**
 
 - `employee_totals(employee_id, total)`: counted types only, in the employee's own currency, with a unique index so it can be refreshed `CONCURRENTLY` (readers never wait).
-- `population()` reads it when `ANALYTICS_TOTALS_VIEW` is on (default); off falls back to the live aggregate. Tests run with it off (they check the live semantics) and one test compares the two.
-- Refreshed: at bootstrap, at the end of the daily job (promotion changes pay without an API write), and by a background thread in the API **10 s after the latest write** (`TOTALS_REFRESH_DELAY`), so a burst of writes costs one refresh; a read that promotes a due future-dated change also marks it stale. The response cache is emptied after each refresh.
+- `population()` reads it when `ANALYTICS_TOTALS_VIEW` is on; off falls back to the live aggregate. **It follows the environment: on in development, off otherwise (the production default, tuned for 10,000 employees), where the live aggregate is ample.** Tests run with it off (they check the live semantics) and one test compares the two.
+- Refreshed: at bootstrap, at the end of the daily job (promotion changes pay without an API write), and by a background thread in the API after the latest write (`TOTALS_REFRESH_DELAY`; **10 s** for the figures below, default now 2 s), so a burst of writes costs one refresh; a read that promotes a due future-dated change also marks it stale. The response cache is emptied after each refresh.
 - Refreshing needs ownership of the view, which the application's least-privilege role lacks, so the refresh runs through a `SECURITY DEFINER` function the role may call (it still can't alter or drop the view).
 
 **Results** (1M employees, server time per view, cache off, one run each; live = flag off):
@@ -452,7 +452,7 @@ Cumulative against the E9/E11 starting point (13.4 / 8.8 / 8.1 / 10.8 / 39.8 / 7
 
 1. **Confirmed.** The gain is 1.2–2.3×, about the 2.3 s pass, not E5's 4.5–11×. Outliers gained least (7.0 s): its time is in the peer-group medians and the join over 862k rows, not in the totals.
 2. **Confirmed.** Refresh 3–7 s, size 71 MB.
-3. **Confirmed, with a design to bound it.** Staleness is about the refresh delay plus the refresh itself (10 s + ~6 s at 1M). Pay changes made outside the API and not through a promotion would wait for the daily run. The directory is *not* affected: it still computes the totals of the 50 people on a page live, and the response cache is emptied on each refresh.
+3. **Confirmed, with a design to bound it.** Staleness is about the refresh delay plus the refresh itself (10 s + ~6 s at 1M; about 2 s + 0.1 s at 10,000 with the defaults). Pay changes made outside the API and not through a promotion would wait for the daily run. The directory is *not* affected: it still computes the totals of the 50 people on a page live, and the response cache is emptied on each refresh.
 
 **Trade-offs:**
 
@@ -659,7 +659,7 @@ The cost has a floor of about 25 s that barely depends on the range, because the
 | Pool size and worker count for the directory | No change needed | E9: workers 1 → 4 and pool 15 → 50 gave the same ~13 req/s; the database is the bottleneck. More connections caused 503s from shared-memory exhaustion (fixed in E14) |
 | Prepared statements on pooled connections | **Changed** (`prepare_threshold=None`) | E10: promotion 1.4 ms → 153 ms after ~10 requests on a connection; single-client directory latency 2–3.5× lower after the fix |
 | Pay-insight queries at 1M employees | **Changed** (context query, CTEs) | E11: 1.8–4.8× faster (outliers 39.8 s to 8.3 s); a full pass over per-employee pay (~2.3 s) remains; pay-changes report unchanged at 46 s |
-| Stored per-employee totals for pay insights | **Changed** (materialized view, refreshed after writes) | E12: views 1.2–2.3× faster again (cumulative 3.3–5.7×); refresh 3–7 s, 71 MB; staleness of about 16 s after a write |
+| Stored per-employee totals for pay insights | **Changed in development only** (materialized view, refreshed after writes) | E12: views 1.2–2.3× faster again (cumulative 3.3–5.7×); refresh 3–7 s, 71 MB; staleness of about 16 s after a write |
 | Trigram indexes for directory text search | **Changed** (migration `0014`) | E13: searches of 3+ characters 8–180× faster at 1M (rare terms 9–28 ms, was 1.6–2.4 s); +39% bulk-insert time, 161 MB |
 | Postgres settings for the local database | **Changed** (`shm_size` 512 MB, `shared_buffers` 1 GB) | E14: 503 errors under concurrent load gone (42 to 0); directory +10-20% throughput; views and `work_mem` unchanged |
 | Directory total count (exact `count(*)`) | **Kept exact** | E15: 0.2-0.7% of database time in a realistic mix; pay insights are 98.8% |

@@ -36,19 +36,31 @@ Tests: `cd backend && pytest` (uses its own `<db>_test` database and never touch
 
 Run on 2026-10-15 (coverage figure from 2026-10-10). The backend suite includes unit tests for the pure domain layer and integration tests against a real Postgres, so the database must be running (`docker compose up -d db`).
 
+## Environments
+
+Defaults are tuned for the 10,000 employees the app is specified for, and `ENVIRONMENT` defaults to `production`. Features built for a million employees (Scale Lab, `docs/PERFORMANCE.md`) turn on only with `ENVIRONMENT=development`, which `backend/.env` sets for local work.
+
+| | Production / default (10,000 employees) | Development (`ENVIRONMENT=development`) |
+| --- | --- | --- |
+| Pay insights read pay totals | computed live: always current | from the `employee_totals` materialized view: faster at 1M, up to a few seconds behind a change |
+| Background refresh of that view | none | after any change, at the end of the daily job, at bootstrap |
+| Postgres in Docker (`docker-compose.yml`) | n/a (Render's managed Postgres) | 512 MB shared memory, 1 GB `shared_buffers`, `pg_stat_statements` |
+
+Not environment-specific, because they cost nothing at 10,000 and help at any size: keyset pagination, the denormalised current-pay table, the pay-insight query rewrites, the 5-minute response cache, trigram search indexes (skipped if the database doesn't allow the extension), and disabling prepared statements.
+
 ## Deploy
 
 One container serves the built frontend and the API (the API under `/api`), so there is nothing to wire together and no CORS.
 
 **On Render (free tier):** New → Blueprint → pick this repo. `render.yaml` creates the web service from the `Dockerfile` and a managed Postgres, and sets `DATABASE_URL` from it.
 
-**Anywhere else:** build the `Dockerfile` and run it with `DATABASE_URL` pointing at a Postgres 16 database (`postgres://…` URLs are accepted). Optional: `EXCHANGE_RATE_API_URL` (defaults to open.er-api.com), `PORT`, `ANALYTICS_CACHE_SECONDS` (default 300; `0` turns the pay-insight cache off), `ANALYTICS_TOTALS_VIEW` (default on; `false` makes Pay insights compute totals live instead of reading the materialized view), `TOTALS_REFRESH_DELAY` (seconds to wait after a change before refreshing the view, default 10), `DB_POOL_SIZE`, `DB_MAX_OVERFLOW`, `DB_POOL_TIMEOUT`.
+**Anywhere else:** build the `Dockerfile` and run it with `DATABASE_URL` pointing at a Postgres 16 database (`postgres://…` URLs are accepted). Optional: `EXCHANGE_RATE_API_URL` (defaults to open.er-api.com), `PORT`, `ANALYTICS_CACHE_SECONDS` (default 300; `0` turns the pay-insight cache off), `ANALYTICS_TOTALS_VIEW` (unset: on when `ENVIRONMENT=development`, off otherwise; `true`/`false` forces it), `TOTALS_REFRESH_DELAY` (seconds to wait after a change before refreshing the view, default 2), `DB_POOL_SIZE`, `DB_MAX_OVERFLOW`, `DB_POOL_TIMEOUT`.
 
 On every start the container runs `python -m app.bootstrap`, then the daily job in the background, then the server:
 
 1. `alembic upgrade head`
 2. reference data, compensation catalog, change reasons, org structure, companies (insert-only, safe to repeat)
-   (and `employee_totals`, a materialized view of every employee's annual total that the Pay insights read; it is refreshed here, by the daily job and a few seconds after any change made through the API)
+   (`employee_totals`, a materialized view of every employee's annual total, is kept up to date only in development; see Environments)
 3. the first live exchange-rate fetch (a provider outage is logged, not fatal; the daily job retries)
 4. 10,000 synthetic employees, **only if there are none**: history is append-only, so it is never reseeded
 

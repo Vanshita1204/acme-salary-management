@@ -21,6 +21,7 @@ from datetime import UTC, date, datetime, timedelta
 import httpx
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.db.session import SessionLocal
 from app.services.compensation import promote_due_records
 from app.services.employee_totals import refresh_totals
@@ -53,7 +54,8 @@ def run_daily(
     session.commit()
     promoted = promote_due_records(session, today)
     session.commit()
-    refresh_totals(session)  # promotion changes current pay without an API write
+    if get_settings().use_totals_view:
+        refresh_totals(session)  # promotion changes current pay without an API write
     return DailyResult(rates=rates, promoted=promoted)
 
 

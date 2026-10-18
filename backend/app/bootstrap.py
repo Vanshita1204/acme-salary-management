@@ -19,6 +19,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import func, select
 
+from app.core.config import get_settings
 from app.db.session import SessionLocal
 from app.models import Employee
 from app.seed.change_reasons import check_change_reasons, load_change_reasons
@@ -85,6 +86,8 @@ def seed_population(count: int) -> str:
 
 
 def build_totals() -> str:
+    if not get_settings().use_totals_view:
+        return "employee totals view not in use in this environment"
     with SessionLocal() as session:
         started = time.perf_counter()
         refresh_totals(session)

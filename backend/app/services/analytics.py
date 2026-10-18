@@ -107,7 +107,7 @@ def population(session: Session, query: DirectoryQuery, reporting: str) -> Selec
     # Stored totals (fast, as fresh as the last refresh) or computed now (always current).
     totals = (
         select(employee_totals.c.employee_id, employee_totals.c.total).subquery()
-        if get_settings().analytics_totals_view
+        if get_settings().use_totals_view
         else annual_totals().subquery()
     )
     rates = latest_rate_rows().subquery()
