@@ -1,3 +1,3 @@
 first_name,last_name,email,company,department,job_title,job_level,country,hire_date,currency,Base Pay,Housing Allowance,Meal Allowance,Transport Allowance,Annual Bonus,Quarterly Bonus,Retention Bonus,Annual Equity Grant (RSU),Learning & Development Reimbursement,Phone & Internet Reimbursement,Phone & Internet Reimbursement (CTC),Wellness Reimbursement,Annual Variable Pay (Target)
-Noah,Bennett,noah.bennetts.sample@example.com,Acme Canada Iqnc.,Engineering,Account Executive,L3,CA,2026-09-10,CAD,9500,,,,,,,,,,,,
-Chloe,Tremblay,chloe.tremblays.sample@example.com,Acme Canada Iqnc.,Finance,Accountant,L2,CA,2026-09-20,CAD,7800,,,,,,,,,,,,
+Noah,Bennett,noah.bennetts.vietnam.sample@example.com,Acme Vietnam Iqnc.,Engineering,Account Executive,L3,VI,2026-09-10,VND,9500000,,,,,,,,,,,,
+Chloe,Tremblay,chloe.tremblays.vietnam.sample@example.com,Acme Vietnam Iqnc.,Finance,Accountant,L2,VI,2026-09-20,VND,780000,,,,,,,,,,,,x
