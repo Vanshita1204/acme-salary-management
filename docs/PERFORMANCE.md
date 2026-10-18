@@ -883,6 +883,61 @@ Transfer times are computed from size and link speed (size ÷ 500 KB/s and ÷ 12
 
 ---
 
+## E22 — The CSV export
+
+E21's profile of the application layer found the export is the slowest ordinary request at 10,000 employees: 455 ms in total, of which the database is 167 ms and **287 ms is Python**. This looks at where that Python time goes and removes it without changing a byte of the file. `python -m scale_lab.e22_export`.
+
+**What the code does today:** `export_employees` loads every matching employee as a full ORM `Employee` object with its department, title and level (three joined relationships), then fetches the totals in batches of 1,000 employees (11 queries at 10k), converts each total to the reporting currency in Python, and `directory_csv` writes the rows with `csv.writer`. On the 10k database that is about 370 ms to load and convert and 73 ms to write.
+
+**Hypotheses (written before changing anything):**
+
+1. Most of the loading time is **building ORM objects** (about 40,000 instance loads for 10,006 employees) and the **11 batched totals queries**, not the SQL itself. Selecting just the columns the file needs, with the names joined in SQL, and computing the totals in the same statement, cuts "load and convert" from about 370 ms to **under 150 ms**.
+2. The CSV writer has a little slack: trimming per-row work takes the 73 ms to **about 45 ms or less**.
+3. The whole export falls from about 445 ms to **under 200 ms** in-process, and the file is **byte-for-byte identical** (checked against the old output for unfiltered, filtered, sorted-by-pay and other-currency exports).
+4. The saving scales with rows: a 40,000-row export at 1M employees (one country) falls by a similar factor.
+
+**What changed** (`app/services/directory.py`, `app/services/exports.py`):
+
+- `export_employees` now selects just the exported columns (`ExportPerson`, a plain tuple type) with the department, title and level names joined in SQL, in the directory's order, instead of loading an `Employee` object with three related objects for every row.
+- The totals come from **one** query restricted to exactly the exported employees (the ids passed as a single array parameter), instead of one query per 1,000 employees (11 at 10k).
+- `directory_csv` builds each row from a generator and works out the older-rate date once per currency instead of once per row.
+- The exported bytes are unchanged.
+
+**Results** (in-process, a fresh session per run, median of 3; the old column is the code before the change):
+
+| Export | Rows | Old | New | Speed-up |
+| --- | --- | --- | --- | --- |
+| Everyone (10,000-employee database) | 10,006 | 440 ms | 170–190 ms | 2.3–2.6× |
+| One country (India) | 3,114 | 132 ms | 59–62 ms | 2.1–2.2× |
+| By pay, descending, two countries | 2,624 | 126 ms | 71–79 ms | 1.6–1.8× |
+| By level, in euros, one country | 599 | 34 ms | 18–22 ms | 1.5–1.9× |
+| Search "an", newest first | 3,071 | 141 ms | 71–73 ms | 1.9–2.0× |
+| Active, in rupees, two countries | 3,034 | 150 ms | 56–59 ms | 2.5–2.7× |
+| **One country at 1M employees (Singapore)** | **40,292** | **1,892 ms** | **994–1,128 ms** | **1.7–1.9×** |
+
+The profile at 10k went from 370 ms to load and convert plus 73 ms to write the file, to **128–134 ms plus 39 ms**. As a real HTTP request (the export button) the 10k export fell from 455 ms to **178 ms**: database 167 → 80 ms (5 queries instead of 15) and Python 287 → 94 ms.
+
+**The files are byte-for-byte identical** to the old code's: SHA-256 hashes and a byte comparison match in all six 10k cases and in the 1M export (the 10k "everyone" file hashes to `325228a81541` before and after).
+
+**A first attempt that was slower at scale.** Version 1 joined the totals into the main statement as a grouped subquery (one query, and 10k went to 171 ms, even faster). At 1M the same Singapore export took **3,430 ms, against 1,892 ms before**: a grouped join makes Postgres total *every* employee's pay (the 2.3 s pass over 4.3 M rows from E12) even to export 40,000 people. The old batched `IN` lists had restricted that work to the selected employees without anyone noticing. Fetching the totals in a second query for exactly the exported ids fixes it.
+
+**Verdicts:**
+
+1. **Confirmed.** Load and convert fell from 370 ms to 128–134 ms (target: under 150). The saving is the ORM objects and the batched queries; the SQL itself got cheaper too (database time 167 → 80 ms).
+2. **Confirmed.** The writer fell from 73 ms to 39 ms (target: 45 or less).
+3. **Confirmed.** The whole export is 170–190 ms in-process (target: under 200), identical bytes.
+4. **Partly confirmed.** At 1M the saving is **1.7–1.9×**, less than at 10k (2.3–2.6×): the totals pass for 40,000 employees and the database now dominate, and the Python saving is a smaller share.
+
+**Trade-offs:**
+
+- The export no longer goes through the `Employee` model: a new exported column needs adding in two places (the select and `ExportPerson`) instead of one.
+- A fixed hazard avoided: passing ids as one array parameter keeps working for very large exports, where one bound parameter per id would hit Postgres's 65,535-parameter limit.
+- The whole file is still built in memory (about 1.5 MB for 10,000 employees, around 150 MB for a million); streaming would not make it faster, only lighter.
+
+**Left:** the export of everyone at 1M employees (a 150 MB file) was not measured; it is not a realistic request.
+
+---
+
 ## Summary — what the lab confirmed or changed
 
 | Decision | Status | Evidence |
@@ -911,3 +966,4 @@ Transfer times are computed from size and link speed (size ÷ 500 KB/s and ÷ 12
 | Covering, partial and BRIN index variants | **Not adopted** | E19: planner ignored both covering indexes; BRIN made a date-range count 3x slower (physical order does not follow date) |
 | `max_parallel_workers_per_gather` and `effective_cache_size` | **Defaults kept** | E20: 0 workers made three views 1.5-2.6x slower but gave +8% directory throughput under load; 4 or 8 workers gained only on one view; cache size changed nothing |
 | Compression and cache headers | **Changed** (gzip level 5 for responses of 1 KB or more; immutable hashed assets) | E21: JSON 4.7-6x and bundle 3.4x smaller; export 2.8 s to 0.6 s at 4 Mbps but 40 ms slower at 100 Mbps; bug fixed (tiny responses were being gzipped) |
+| CSV export | **Changed** (columns only, one totals query, leaner writer) | E22: 10k export 455 ms to 178 ms as an HTTP request, identical file; 1M one-country export 1.7-1.9x faster; a joined-totals first attempt was slower at 1M |
