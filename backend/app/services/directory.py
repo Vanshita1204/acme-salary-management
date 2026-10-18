@@ -47,7 +47,7 @@ from app.models import (
     JobLevel,
     JobTitle,
 )
-from app.services.compensation import promote_due_records
+from app.services.compensation import promote_due_records_for_request
 from app.services.exchange_rates import latest_rates, require_supported_currency
 
 Sort = Literal["name", "hire_date", "level", "compensation"]
@@ -260,7 +260,7 @@ def list_employees(session: Session, query: DirectoryQuery) -> DirectoryPage:
     ascending = reads_ascending(query.order, direction)
 
     reporting = require_supported_currency(session, query.reporting_currency)
-    promote_due_records(session)  # future-dated records whose date has arrived
+    promote_due_records_for_request(session)  # future-dated records whose date has arrived
     stmt, keys, parsers = sort_key(query)
     stmt = apply_filters(stmt, query)
     filtered = stmt  # before the cursor and limit; start-of-page counting reuses it
@@ -369,7 +369,7 @@ def export_employees(session: Session, query: DirectoryQuery) -> DirectoryExport
     statement instead made Postgres total every employee's pay, which at a million
     employees costs seconds even for a small export (Scale Lab E22)."""
     reporting = require_supported_currency(session, query.reporting_currency)
-    promote_due_records(session)
+    promote_due_records_for_request(session)
     stmt, keys, _ = sort_key(query)
     ascending = query.order == "asc"
     stmt = (

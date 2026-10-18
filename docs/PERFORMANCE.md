@@ -966,6 +966,49 @@ The framework's fixed cost is small too: the server time of `/health` is **0.4 m
 
 ---
 
+## E24 — Database round trips
+
+On Render the database is a separate server, so every round trip pays network latency that is invisible on one machine (local: about 0.1 ms; the hosted `/departments` request took 4.4 ms against 1.9 ms here, roughly 0.8 ms per round trip). A directory request runs six statements, and the connection pool's `pool_pre_ping` adds a ping, and the transaction ends with a COMMIT or ROLLBACK, each its own round trip. This counts the round trips of each request and measures how request time grows with latency, then removes the ones that are not needed. To make latency measurable on one machine, `python -m scale_lab.e24_round_trips` runs a small TCP proxy between the API and Postgres that counts round trips (a client message after a server reply) and delays every message by a chosen amount, on the 10,000-employee database.
+
+**Hypotheses (written before building the harness):**
+
+1. **Round trips per request:** `/departments` makes 3 (ping, the query, the closing rollback), the **directory page 8** (ping, 6 statements, the commit), the **employee profile about 8**, and the **pay-insight summary about 7** (ping, 5 statements, the commit).
+2. **Time grows linearly with round trips:** with 1 ms of round-trip latency added, the directory request takes about **8 ms longer** than with none; with 3 ms, about 24 ms longer.
+3. **Four round trips can go without changing a response:** the ping on every connection checkout (it only matters after an idle period), the check that the reporting currency exists, the lookup of the latest exchange rates, and the per-read promotion of due future-dated pay (which can only find something once per day). I expect the directory to fall from **8 to about 4** round trips and, at 3 ms latency, to be about **12 ms faster** of roughly 36 ms.
+4. **Nothing visible changes:** every response is identical, and the existing tests pass.
+
+**What changed** (`app/db/session.py`, `app/services/exchange_rates.py`, `app/services/compensation.py`, `app/main.py`; each has a setting that restores the old behaviour):
+
+1. **Ping only after idle** (`DB_PING_IDLE_SECONDS`, default 10): a pooled connection is tested with `SELECT 1` only if it has sat idle that long, instead of on every checkout; a dead one is replaced. Trade-off, covered by a test: after a database restart, a connection used within the window fails **once** (HTTP 503) before the pool replaces it.
+2. **Currencies and rates in memory** (`REFERENCE_CACHE_SECONDS`, default 60): a currency seen once is remembered for the life of the process (currencies are only ever added; an unknown code is always checked in the database, so one added a moment ago works at once), and the latest exchange rates are remembered for up to 60 s, forgotten at once by any write through the API and by a rate refresh in the same process. A refresh by *another* process (the daily job) shows up within the 60 s.
+3. **Promotion once a day** (`PROMOTE_ONCE_PER_DAY`, default on): the per-read look for future-dated pay that has come due runs until it finds nothing, then not again that UTC day in that process. A record written today is either current at once or dated after today, so nothing new can fall due before midnight. A promotion that moved rows is not trusted (it might be rolled back) until a run finds nothing.
+
+**Results** (10,000-employee database; the API behind the delaying proxy; 15 requests each, median; "before" is the three settings off, "after" the defaults). Round trips are counted at 1 ms of added latency:
+
+| Request | Round trips | Time at 0 ms added | At 1 ms added | At 3 ms added | Milliseconds added per ms of latency |
+| --- | --- | --- | --- | --- | --- |
+| reference list (/departments) | 3 → 3 | 3.0 → 2.6 ms | 6.3 → 5.1 ms | 13.9 → 8.9 ms | 3.6 → 2.1 |
+| directory page | 9 → 5 | 20.0 → 12.2 ms | 33.2 → 19.5 ms | 58.4 → 34.8 ms | 12.8 → 7.5 |
+| employee profile | 9 → 5 | 18.0 → 6.9 ms | 26.4 → 13.6 ms | 50.6 → 27.9 ms | 10.9 → 7.0 |
+| pay insight: summary | 8 → 4 | 69.3 → 65.2 ms | 81.6 → 68.7 ms | 102.1 → 79.7 ms | 10.9 → 4.8 |
+
+**The last column is a cross-check:** a request that needs *n* sequential round trips slows by *n* ms for every millisecond of latency. The directory page slows by 12.8 ms per ms before, which is more than the 9 trips my counter saw: a trip is sometimes more than one exchange (preparing, then executing), so the counted trips are a lower bound. By the slope the directory page went from about 13 exchanges to 7.5.
+
+**Responses are unchanged:** 19 requests (the reference lists, the directory with filters, sorts and another currency, an unknown currency's error, a profile, the CSV export, the pay-insight views and a conversion) returned **byte-identical** bodies from a server with the three settings off and one with the defaults. The suite passes with the old behaviour (596 tests, the test environment keeps the three settings off) and with 15 new tests for the three mechanisms (611).
+
+**Verdicts:**
+
+1. **Close, but one more than I predicted.** I predicted 3 / 8 / 8 / 7; the counts were 3 (4 at the start) / **9 / 9 / 8**: one more per request than I had listed (the transaction's start is its own exchange).
+2. **Confirmed, with a steeper slope.** Time grows linearly with latency, but at about 1.4 ms per counted trip per ms of latency, for the reason above: the directory slowed by 13 ms at 1 ms and 38 ms at 3 ms (I predicted 8 and 24).
+3. **Confirmed, and better than predicted.** The directory went from 9 trips to **5** (the four savings) and at 3 ms of latency from 58 ms to **35 ms** (**24 ms faster, 40%**; I predicted 12 ms). The profile, which has the same shape, fell from 51 ms to 28 ms at 3 ms. The pay-insight summary saves the same 4 round trips (**22 ms of 102 ms**) but they are a small part of a 65 ms request.
+4. **Confirmed.** Identical bytes, tests green.
+
+**Reading this for Render:** the hosted `/departments` took 4.4 ms against 1.9 ms locally, which suggests the database sits roughly 1 ms away (an inference, not a measurement); at that distance a directory page falls from about 33 ms to about 20 ms of server time and a profile from 26 ms to 14 ms.
+
+**Still to be had** (not done): the directory still makes 3 queries (page, totals, count) that could be one statement with a lateral join for the totals, for about two fewer exchanges, but it changes shared code; the closing commit or rollback is a round trip that autocommit mode would remove at the cost of read consistency across a request's statements.
+
+---
+
 ## Summary — what the lab confirmed or changed
 
 | Decision | Status | Evidence |
@@ -996,3 +1039,4 @@ The framework's fixed cost is small too: the server time of `/health` is **0.4 m
 | Compression and cache headers | **Changed** (gzip level 5 for responses of 1 KB or more; immutable hashed assets) | E21: JSON 4.7-6x and bundle 3.4x smaller; export 2.8 s to 0.6 s at 4 Mbps but 40 ms slower at 100 Mbps; bug fixed (tiny responses were being gzipped) |
 | CSV export | **Changed** (columns only, one totals query, leaner writer) | E22: 10k export 455 ms to 178 ms as an HTTP request, identical file; 1M one-country export 1.7-1.9x faster; a joined-totals first attempt was slower at 1M |
 | Serialisation (`orjson`) | **Not adopted** (refuted) | E23: the response encoder is 0.09 ms of a 12 ms directory request and 0.55 ms of 89 ms for the largest view; FastAPI already serialises through Pydantic's Rust core |
+| Database round trips | **Changed** (idle-only ping, remembered currencies and rates, promotion once a day) | E24: directory 9 to 5 round trips, 58 to 35 ms at 3 ms of database latency; responses byte-identical; one failed request after a database restart is the cost |

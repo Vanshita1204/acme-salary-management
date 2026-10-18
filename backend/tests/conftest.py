@@ -63,6 +63,9 @@ _URL = test_database_url()
 ensure_database(_URL)
 os.environ["DATABASE_URL"] = _URL
 os.environ["ANALYTICS_TOTALS_VIEW"] = "false"  # tests check the live computation; one test compares the view
+os.environ["DB_PING_IDLE_SECONDS"] = "0"  # classic ping on every checkout, as before E24
+os.environ["REFERENCE_CACHE_SECONDS"] = "0"  # rates and currencies always read from the database
+os.environ["PROMOTE_ONCE_PER_DAY"] = "false"  # reads always look for due pay changes
 os.environ["ANALYTICS_CACHE_SECONDS"] = "0"  # tests that want the cache switch it on
 # Empty, not just removed: the app also reads .env, which may name a restricted runtime database.
 os.environ["RUNTIME_DATABASE_URL"] = ""

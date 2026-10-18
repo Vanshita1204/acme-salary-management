@@ -13,6 +13,9 @@ import time
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass
+from typing import Generic, TypeVar
+
+T = TypeVar("T")
 
 
 @dataclass(frozen=True)
@@ -62,4 +65,33 @@ class ResponseCache:
 
     def invalidate(self) -> None:
         self._entries.clear()
+        self.version += 1
+
+
+class ExpiringValue(Generic[T]):
+    """One value computed by a function and remembered for `ttl` seconds (0: never remembered),
+    forgotten at once by `invalidate()`. A value computed while a write was landing is not kept."""
+
+    def __init__(self, ttl: float, clock: Callable[[], float] = time.monotonic) -> None:
+        self.ttl = ttl
+        self._clock = clock
+        self._value: T | None = None
+        self._stored_at = 0.0
+        self._has_value = False
+        self.version = 0
+
+    def get(self, compute: Callable[[], T]) -> T:
+        if self.ttl <= 0:
+            return compute()
+        if self._has_value and self._clock() - self._stored_at <= self.ttl:
+            return self._value  # type: ignore[return-value]
+        version = self.version
+        value = compute()
+        if version == self.version:
+            self._value, self._stored_at, self._has_value = value, self._clock(), True
+        return value
+
+    def invalidate(self) -> None:
+        self._has_value = False
+        self._value = None
         self.version += 1

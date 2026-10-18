@@ -28,7 +28,7 @@ from app.services.compensation import (
     EMPLOYEE_NOT_FOUND,
     TERMINATED,
     append_record,
-    promote_due_records,
+    promote_due_records_for_request,
     reason_id,
     utc_today,
 )
@@ -197,7 +197,7 @@ class Profile:
 def get_profile(session: Session, employee_id: int, reporting_currency: str) -> Profile:
     employee = get_employee(session, employee_id)
     reporting = require_supported_currency(session, reporting_currency)
-    promote_due_records(session)
+    promote_due_records_for_request(session)
     rates, rate_dates = latest_rates(session)
 
     def to_reporting(amount: Decimal) -> Decimal | None:

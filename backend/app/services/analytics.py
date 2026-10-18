@@ -50,7 +50,7 @@ from app.models import (
     JobLevel,
     JobTitle,
 )
-from app.services.compensation import promote_due_records, utc_today
+from app.services.compensation import promote_due_records_for_request, utc_today
 from app.services.directory import (
     DirectoryQuery,
     annual_totals,
@@ -164,7 +164,7 @@ def currency_usage(session: Session, query: DirectoryQuery) -> dict[str, int]:
 
 def prepare(session: Session, query: DirectoryQuery) -> tuple[str, Select, Context]:
     reporting = require_supported_currency(session, query.reporting_currency)
-    promote_due_records(session)
+    promote_due_records_for_request(session)
     pop = population(session, query, reporting).subquery()
     # An employee is left out of the totals only when converting their currency needs a
     # rate that isn't stored (an amount already in the reporting currency needs none).
@@ -637,7 +637,7 @@ def change_report(
     """
     if date_from > date_to:
         raise ServiceError(Problem.INVALID, INVALID_RANGE)
-    promote_due_records(session)
+    promote_due_records_for_request(session)
     date_to = min(date_to, utc_today())
     # Analytics population without the money: active, matching the filters.
     people = apply_filters(

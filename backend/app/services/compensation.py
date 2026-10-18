@@ -15,6 +15,7 @@ from sqlalchemy import and_, exists, func, select, text, tuple_
 from sqlalchemy.dialects.postgresql import distinct_on, insert
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.models import (
     ChangeReason,
     CompensationRecord,
@@ -176,6 +177,25 @@ def refresh_current(session: Session, record: CompensationRecord, today: date) -
             < tuple_(excluded.effective_date, excluded.compensation_record_id),
         )
     )
+
+
+_promoted_on: date | None = None
+
+
+def promote_due_records_for_request(session: Session) -> int:
+    """`promote_due_records` for the read paths, run at most once per UTC day per process
+    once it has found nothing left to do (Scale Lab E24). A record can only become due
+    when the date reaches its effective date: one written today is either current at once
+    or dated after today, so once nothing is due today, nothing new can be before midnight.
+    Only an empty result is remembered, so a promotion that is rolled back is retried."""
+    global _promoted_on
+    today = utc_today()
+    if get_settings().promote_once_per_day and _promoted_on == today:
+        return 0
+    moved = promote_due_records(session, today)
+    if moved == 0:
+        _promoted_on = today
+    return moved
 
 
 def promote_due_records(session: Session, today: date | None = None) -> int:

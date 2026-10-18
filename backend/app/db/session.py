@@ -3,7 +3,7 @@ from collections.abc import Generator
 from contextvars import ContextVar
 from dataclasses import dataclass
 
-from sqlalchemy import MetaData, create_engine, event
+from sqlalchemy import Engine, MetaData, create_engine, event, exc
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import get_settings
@@ -18,12 +18,40 @@ _settings = get_settings()
 engine = create_engine(
     _settings.runtime_database_url or _settings.database_url,
     future=True,
-    pool_pre_ping=True,
+    # Ping on every checkout only when asked to (db_ping_idle_seconds = 0); otherwise the
+    # idle-only ping below. Either way a dead connection is replaced rather than used.
+    pool_pre_ping=_settings.db_ping_idle_seconds <= 0,
     connect_args={"prepare_threshold": None},
     pool_size=_settings.db_pool_size,
     max_overflow=_settings.db_max_overflow,
     pool_timeout=_settings.db_pool_timeout,
 )
+
+
+def install_idle_ping(target: Engine, idle_seconds: float) -> None:
+    """Test a pooled connection with a ping only if it has sat idle for `idle_seconds`, and
+    replace it if it has died. A ping is a round trip on every request; skipping it while a
+    connection is in regular use saves that round trip (Scale Lab E24)."""
+
+    @event.listens_for(target, "checkin")
+    def remember_last_use(dbapi_connection, connection_record):
+        connection_record.info["last_used"] = time.monotonic()
+
+    @event.listens_for(target, "checkout")
+    def ping_if_idle(dbapi_connection, connection_record, connection_proxy):
+        last_used = connection_record.info.get("last_used")
+        if last_used is None or time.monotonic() - last_used < idle_seconds:
+            return
+        try:
+            with dbapi_connection.cursor() as cursor:
+                cursor.execute("SELECT 1")
+            dbapi_connection.rollback()
+        except Exception as error:
+            raise exc.DisconnectionError("the pooled connection is no longer usable") from error
+
+
+if _settings.db_ping_idle_seconds > 0:
+    install_idle_ping(engine, _settings.db_ping_idle_seconds)
 
 
 @dataclass

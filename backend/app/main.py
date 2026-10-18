@@ -26,6 +26,7 @@ from app.db.session import QueryStats, SessionLocal, query_stats
 from app.services.employee_totals import refresh_totals
 from app.services.employee_totals import stale as totals_stale
 from app.services.errors import ServiceError
+from app.services.exchange_rates import forget_rates
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +81,7 @@ async def timing_and_cache(request: Request, call_next):
 
     if request.method not in ("GET", "HEAD"):
         response_cache.invalidate()
+        forget_rates()
         totals_stale.set()
     cacheable = (
         response_cache.enabled
