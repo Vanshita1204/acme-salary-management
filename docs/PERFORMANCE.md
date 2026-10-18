@@ -938,6 +938,34 @@ The profile at 10k went from 370 ms to load and convert plus 73 ms to write the 
 
 ---
 
+## E23 — Serialisation (negative result)
+
+The application-layer ranking after E21 put serialisation third: at 10,000 employees a directory request spends about 6 ms in Python, and I expected `orjson` with lighter response handling to **roughly halve it**. This measures how much of a response is serialisation before adding a dependency. `python -m scale_lab.e23_serialisation`.
+
+**Prediction (from the ranking, before measuring):** serialisation is a large part of the directory's 6 ms of Python, and `orjson` takes that to about 3 ms; the large pay-insight responses (up to 104 KB) gain more.
+
+**What the stack already does:** FastAPI 0.142 with Pydantic 2.13 serialises a response model through Pydantic's Rust core (`dump_json`), so the JSON encoder is not Python's `json`. `uvloop` and `httptools` are already installed, so uvicorn already uses the fast event loop and HTTP parser. `orjson` is not installed.
+
+**Results** (10,000-employee database, median of 30 runs, in-process):
+
+| Step | Directory page (50 rows, 20 KB) | Outliers view (422 rows, 104 KB) |
+| --- | --- | --- |
+| The service call (SQL, ORM objects, totals, post-processing) | 8.45 ms | 61.4 ms |
+| Building the response items (three model passes per row) | 0.65 ms | not separate |
+| Validating against the response model | 0.16 ms | 0.01 ms |
+| **`dump_json` (Pydantic, Rust)** | **0.09 ms** | **0.55 ms** |
+| `dump_python` + Python `json.dumps` (for comparison) | 0.22 ms | 1.30 ms |
+
+The framework's fixed cost is small too: the server time of `/health` is **0.4 ms**, and of `/departments` (a session, one tiny query, a 224-byte response) **2.3 ms**.
+
+**Verdict: refuted.** Serialisation, building and validating the directory page together take about **0.9 ms of a roughly 12 ms request (8%)**, and the encoder itself 0.09 ms. For the outliers view the encoder is **0.55 ms of 89 ms (0.6%)**. Even a faster encoder than Pydantic's could save at most that much, so `orjson` could not halve anything: the ceiling is a fraction of a millisecond per request. Not adopted; no dependency added and no code changed.
+
+**Where the Python time actually is:** loading the 50 `Employee` objects with their joined relationships (about 3 ms of the directory's 8.45 ms service call, the rest is the database), then about 0.65 ms building items, 0.1 ms writing JSON, and the fixed 0.4 to 2.3 ms of framework and session. For the pay-insight views, the Python is the work in the service (turning rows into result objects), not the response.
+
+**What this suggests:** the one visible Python cost in a directory request is the ORM objects, which the export (E22) already avoided by selecting only the columns it needs; doing the same for the directory page would save about 2 ms of 12 (17%) but changes the shared code that other endpoints use, so it is a candidate rather than a decision.
+
+---
+
 ## Summary — what the lab confirmed or changed
 
 | Decision | Status | Evidence |
@@ -967,3 +995,4 @@ The profile at 10k went from 370 ms to load and convert plus 73 ms to write the 
 | `max_parallel_workers_per_gather` and `effective_cache_size` | **Defaults kept** | E20: 0 workers made three views 1.5-2.6x slower but gave +8% directory throughput under load; 4 or 8 workers gained only on one view; cache size changed nothing |
 | Compression and cache headers | **Changed** (gzip level 5 for responses of 1 KB or more; immutable hashed assets) | E21: JSON 4.7-6x and bundle 3.4x smaller; export 2.8 s to 0.6 s at 4 Mbps but 40 ms slower at 100 Mbps; bug fixed (tiny responses were being gzipped) |
 | CSV export | **Changed** (columns only, one totals query, leaner writer) | E22: 10k export 455 ms to 178 ms as an HTTP request, identical file; 1M one-country export 1.7-1.9x faster; a joined-totals first attempt was slower at 1M |
+| Serialisation (`orjson`) | **Not adopted** (refuted) | E23: the response encoder is 0.09 ms of a 12 ms directory request and 0.55 ms of 89 ms for the largest view; FastAPI already serialises through Pydantic's Rust core |
