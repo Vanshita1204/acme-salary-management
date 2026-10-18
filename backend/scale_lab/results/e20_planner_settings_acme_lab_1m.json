@@ -1,0 +1,166 @@
+{
+  "environment": {
+    "machine": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "cpu_count": 10,
+    "memory_gb": 16,
+    "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "1310728kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-18T07:10:19+00:00"
+  },
+  "max_parallel_workers_per_gather": {
+    "0": {
+      "views_ms": {
+        "summary": 1748,
+        "stats by department": 1437,
+        "role across countries": 1751,
+        "histogram": 1327,
+        "composition": 2489,
+        "outliers": 3292
+      },
+      "pages_ms": {
+        "directory first page": 31.7,
+        "directory department + country": 17.4,
+        "directory search 'abbott'": 10.0
+      },
+      "ten_clients": {
+        "throughput_rps": 25.8,
+        "p50_ms": 81.4,
+        "p95_ms": 1285.9,
+        "errors": 0
+      }
+    },
+    "2": {
+      "views_ms": {
+        "summary": 1611,
+        "stats by department": 958,
+        "role across countries": 1106,
+        "histogram": 1206,
+        "composition": 975,
+        "outliers": 3150
+      },
+      "pages_ms": {
+        "directory first page": 21.4,
+        "directory department + country": 18.9,
+        "directory search 'abbott'": 10.9
+      },
+      "ten_clients": {
+        "throughput_rps": 24.0,
+        "p50_ms": 143.0,
+        "p95_ms": 1791.6,
+        "errors": 0
+      }
+    },
+    "4": {
+      "views_ms": {
+        "summary": 1617,
+        "stats by department": 972,
+        "role across countries": 1125,
+        "histogram": 1192,
+        "composition": 716,
+        "outliers": 3262
+      },
+      "pages_ms": {
+        "directory first page": 23.3,
+        "directory department + country": 20.6,
+        "directory search 'abbott'": 9.5
+      },
+      "ten_clients": {
+        "throughput_rps": 23.5,
+        "p50_ms": 150.2,
+        "p95_ms": 1694.8,
+        "errors": 0
+      }
+    },
+    "8": {
+      "views_ms": {
+        "summary": 1646,
+        "stats by department": 967,
+        "role across countries": 1102,
+        "histogram": 1218,
+        "composition": 730,
+        "outliers": 3149
+      },
+      "pages_ms": {
+        "directory first page": 21.5,
+        "directory department + country": 20.4,
+        "directory search 'abbott'": 10.1
+      },
+      "ten_clients": {
+        "throughput_rps": 22.7,
+        "p50_ms": 153.4,
+        "p95_ms": 1856.7,
+        "errors": 0
+      }
+    }
+  },
+  "effective_cache_size": {
+    "1GB": {
+      "views_ms": {
+        "summary": 1634,
+        "stats by department": 964,
+        "role across countries": 1118,
+        "histogram": 1214,
+        "composition": 946,
+        "outliers": 3195
+      },
+      "pages_ms": {
+        "directory first page": 21.1,
+        "directory department + country": 18.4,
+        "directory search 'abbott'": 8.9
+      },
+      "ten_clients": {
+        "throughput_rps": 23.9,
+        "p50_ms": 138.1,
+        "p95_ms": 1654.7,
+        "errors": 0
+      }
+    },
+    "4GB": {
+      "views_ms": {
+        "summary": 1656,
+        "stats by department": 978,
+        "role across countries": 1213,
+        "histogram": 1300,
+        "composition": 1097,
+        "outliers": 3205
+      },
+      "pages_ms": {
+        "directory first page": 25.0,
+        "directory department + country": 22.6,
+        "directory search 'abbott'": 10.6
+      },
+      "ten_clients": {
+        "throughput_rps": 24.2,
+        "p50_ms": 143.9,
+        "p95_ms": 1726.7,
+        "errors": 0
+      }
+    },
+    "6GB": {
+      "views_ms": {
+        "summary": 1716,
+        "stats by department": 976,
+        "role across countries": 1163,
+        "histogram": 1204,
+        "composition": 980,
+        "outliers": 3238
+      },
+      "pages_ms": {
+        "directory first page": 22.4,
+        "directory department + country": 23.0,
+        "directory search 'abbott'": 7.7
+      },
+      "ten_clients": {
+        "throughput_rps": 24.1,
+        "p50_ms": 149.9,
+        "p95_ms": 1656.8,
+        "errors": 0
+      }
+    }
+  }
+}

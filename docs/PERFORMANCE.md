@@ -776,6 +776,64 @@ Baseline views: summary 3.6 s, stats by department 1.8 s, role across countries 
 
 ---
 
+## E20 — Parallel query workers and `effective_cache_size`
+
+E14 left two settings untested. **`max_parallel_workers_per_gather`** (default 2) is how many extra processes one query may use for big scans and aggregations; the plans in E10 and E18 show queries already using 2. **`effective_cache_size`** (default 4 GB) tells the planner how much data it can expect to find cached; it changes which plan is chosen, and allocates nothing. Both are set per database (`ALTER DATABASE ... SET`) on `acme_lab_1m` and reset afterwards, so they take effect for new connections without restarting the server. `python -m scale_lab.e20_planner_settings`.
+
+**What is measured, for each value:** one client (the six pay-insight views, best of 3; the directory's first page, a filtered page and a search, median of 5), and ten clients on the directory workload for 12 s (the real server, as in E9).
+
+**Hypotheses (written before running):**
+
+1. **One client:** more workers make the big queries faster, with diminishing returns: 0 workers is **1.5–2.5× slower** than 2 on the views, and 4 or 8 workers are **at most 1.3× faster** than 2.
+2. **Ten clients:** more workers per query *lower* throughput on the directory workload, because queries compete for the same 10 CPUs: 0 workers gives the **highest** throughput and 8 the lowest, by 10–30%.
+3. **`effective_cache_size`:** values from 1 GB to 6 GB change **no query by more than 10%** and no plan, because the plans here are not near the index-versus-scan threshold.
+
+**A caveat before the numbers.** The six views ran about **twice as fast in this experiment as in E18 and E19** (summary 1.6 s here against 3.7 s there; the original profiling script run straight afterwards gave 1.8–2.0 s, so it is the machine or database state, not this script). I do not know why: nothing in the code changed in between. Compare only the rows *within* each table below, never across experiments.
+
+**`max_parallel_workers_per_gather`** (`acme_lab_1m`; one client; views best of 3, time and ratio to the default of 2 workers):
+
+| | summary | stats by department | role across countries | histogram | composition | outliers |
+| --- | --- | --- | --- | --- | --- | --- |
+| 0 workers | 1.75 s (1.09×) | 1.44 s (1.50×) | 1.75 s (1.58×) | 1.33 s (1.10×) | 2.49 s (2.55×) | 3.29 s (1.05×) |
+| 2 workers | 1.61 s (1.00×) | 0.96 s (1.00×) | 1.11 s (1.00×) | 1.21 s (1.00×) | 0.97 s (1.00×) | 3.15 s (1.00×) |
+| 4 workers | 1.62 s (1.00×) | 0.97 s (1.01×) | 1.12 s (1.02×) | 1.19 s (0.99×) | 0.72 s (0.73×) | 3.26 s (1.04×) |
+| 8 workers | 1.65 s (1.02×) | 0.97 s (1.01×) | 1.10 s (1.00×) | 1.22 s (1.01×) | 0.73 s (0.75×) | 3.15 s (1.00×) |
+
+Ten clients on the directory workload for 12 s (and, last column, the one-client directory first page / department + country page / search):
+
+| Setting | Requests/s | p50 | p95 | Errors | One-client pages |
+| --- | --- | --- | --- | --- | --- |
+| 0 workers | 25.8 | 81 ms | 1286 ms | 0 | 31.7 / 17.4 / 10.0 ms |
+| 2 workers | 24.0 | 143 ms | 1792 ms | 0 | 21.4 / 18.9 / 10.9 ms |
+| 4 workers | 23.5 | 150 ms | 1695 ms | 0 | 23.3 / 20.6 / 9.5 ms |
+| 8 workers | 22.7 | 153 ms | 1857 ms | 0 | 21.5 / 20.4 / 10.1 ms |
+
+**`effective_cache_size`** (views, ratio to the default of 4 GB):
+
+| | summary | stats by department | role across countries | histogram | composition | outliers |
+| --- | --- | --- | --- | --- | --- | --- |
+| 1GB | 1.63 s (0.99×) | 0.96 s (0.99×) | 1.12 s (0.92×) | 1.21 s (0.93×) | 0.95 s (0.86×) | 3.19 s (1.00×) |
+| 4GB | 1.66 s (1.00×) | 0.98 s (1.00×) | 1.21 s (1.00×) | 1.30 s (1.00×) | 1.10 s (1.00×) | 3.21 s (1.00×) |
+| 6GB | 1.72 s (1.04×) | 0.98 s (1.00×) | 1.16 s (0.96×) | 1.20 s (0.93×) | 0.98 s (0.89×) | 3.24 s (1.01×) |
+
+| Setting | Requests/s (10 clients) | p50 | p95 | Errors | One-client pages |
+| --- | --- | --- | --- | --- | --- |
+| 1GB | 23.9 | 138 ms | 1655 ms | 0 | 21.1 / 18.4 / 8.9 ms |
+| 4GB | 24.2 | 144 ms | 1727 ms | 0 | 25.0 / 22.6 / 10.6 ms |
+| 6GB | 24.1 | 150 ms | 1657 ms | 0 | 22.4 / 23.0 / 7.7 ms |
+
+**Verdicts:**
+
+1. **Mostly confirmed.** With no parallel workers three views were **1.5–2.6× slower** (stats 1.50×, role across countries 1.58×, composition 2.55×) and three barely changed (summary 1.09×, histogram 1.10×, outliers 1.05×). Beyond the default of 2, more workers gained nothing except on composition (**0.73–0.75×, about 1.35× faster**); the other five views were within 4% of the default.
+2. **Confirmed, in direction and size.** Under ten clients, throughput fell as workers rose: 25.8 → 24.0 → 23.5 → 22.7 requests/s for 0, 2, 4, 8 workers (0 is **8% above the default and 14% above 8**), and the median latency of a directory request was 81 ms with none, 143 ms with 2 and 153 ms with 8. Single-client directory pages (10–30 ms) did not change.
+3. **Confirmed.** `effective_cache_size` from 1 GB to 6 GB changed no view or page by more than the run-to-run spread (the largest, composition at 0.86–0.89×, is the same query that varied most in the workers table), and throughput was 23.9, 24.2 and 24.1 requests/s.
+
+**Trade-off and decision.** Parallel workers help a lone heavy query (up to 2.6×) and cost a busy server a little (up to 14% throughput and a doubled median latency for small queries, since each query takes CPUs from the others). The default of 2 is a sensible middle: it keeps nearly all of the one-client gain, and 4 or 8 add nothing here. **No setting is changed.** `effective_cache_size` matters when the planner chooses between an index and a scan near the break-even point, which none of these queries is.
+
+**Left:** nothing on this list. (The settings were applied with `ALTER DATABASE` and reset afterwards; the lab database has no per-database settings.)
+
+---
+
 ## Summary — what the lab confirmed or changed
 
 | Decision | Status | Evidence |
@@ -802,3 +860,4 @@ Baseline views: summary 3.6 s, stats by department 1.8 s, role across countries 
 | VACUUM and the visibility map | Recorded; no code change | E17: a 5% update burst made counts 3-6x slower at 1M and autovacuum did not repair it; a 4.4 s manual VACUUM did. Irrelevant at 10k |
 | Pay-insight context query (currency count) | **Changed in development** (reads the stored totals) | E18: 3.1x faster unfiltered, 1.9x filtered; views 0.2-0.5 s faster; live query kept for production |
 | Covering, partial and BRIN index variants | **Not adopted** | E19: planner ignored both covering indexes; BRIN made a date-range count 3x slower (physical order does not follow date) |
+| `max_parallel_workers_per_gather` and `effective_cache_size` | **Defaults kept** | E20: 0 workers made three views 1.5-2.6x slower but gave +8% directory throughput under load; 4 or 8 workers gained only on one view; cache size changed nothing |
