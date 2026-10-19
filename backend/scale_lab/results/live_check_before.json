@@ -1,0 +1,75 @@
+{
+  "reference list": {
+    "total_ms": 311,
+    "server_ms": 6,
+    "db_ms": 2,
+    "queries": 1,
+    "bytes": 139,
+    "encoding": "gzip"
+  },
+  "directory page": {
+    "total_ms": 339,
+    "server_ms": 26,
+    "db_ms": 10,
+    "queries": 6,
+    "bytes": 3251,
+    "encoding": "gzip"
+  },
+  "directory search": {
+    "total_ms": 818,
+    "server_ms": 503,
+    "db_ms": 483,
+    "queries": 6,
+    "bytes": 2919,
+    "encoding": "gzip"
+  },
+  "employee profile": {
+    "total_ms": 357,
+    "server_ms": 19,
+    "db_ms": 8,
+    "queries": 6,
+    "bytes": 789,
+    "encoding": "gzip"
+  },
+  "pay insight: summary": {
+    "total_ms": 1465,
+    "server_ms": 1129,
+    "db_ms": 1110,
+    "queries": 5,
+    "bytes": 1155,
+    "encoding": "gzip"
+  },
+  "pay insight: outliers": {
+    "total_ms": 3109,
+    "server_ms": 2620,
+    "db_ms": 2555,
+    "queries": 5,
+    "bytes": 16594,
+    "encoding": "gzip"
+  },
+  "pay insight: histogram": {
+    "total_ms": 1737,
+    "server_ms": 1433,
+    "db_ms": 1403,
+    "queries": 6,
+    "bytes": 448,
+    "encoding": "gzip"
+  },
+  "CSV export": {
+    "total_ms": 6533,
+    "server_ms": 4779,
+    "db_ms": 1274,
+    "queries": 15,
+    "bytes": 1498307,
+    "encoding": null
+  },
+  "bundle": {
+    "total_ms": 350,
+    "bytes": 102406,
+    "encoding": "gzip",
+    "cache_control": null
+  },
+  "url": "https://acme-salary-management-ee70.onrender.com",
+  "runs_each": 8,
+  "note": "measured with an earlier, equivalent script (scale_lab/live_check.py is its cleaned-up version); 'before' is main at aec73fb, 'after' is main at 7f9dbc6"
+}
