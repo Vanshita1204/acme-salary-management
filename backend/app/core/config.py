@@ -44,6 +44,10 @@ class Settings(BaseSettings):
     # Look for future-dated pay that has come due once per UTC day per process, instead of
     # on every read: nothing new can become due until the date changes.
     promote_once_per_day: bool = True
+    # The pay-changes report reads per-day events stored in `pay_change_events` (filled by the
+    # daily job, refreshed for backdated records) instead of windowing over the whole
+    # compensation history on every request (Scale Lab E26). False: always compute live.
+    pay_change_events: bool = True
     # Compress responses with gzip when the browser accepts it (Scale Lab E21). On by
     # default: JSON and the JavaScript bundle shrink 3-10x, which is time on a real network.
     compress_responses: bool = True

@@ -26,6 +26,7 @@ from app.db.session import SessionLocal
 from app.services.compensation import promote_due_records
 from app.services.employee_totals import refresh_totals
 from app.services.exchange_rates import RefreshResult, refresh_exchange_rates
+from app.services.pay_changes import fill_through_yesterday
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +42,7 @@ MIN_REFETCH_INTERVAL = timedelta(hours=1)
 class DailyResult:
     rates: RefreshResult
     promoted: int  # current-compensation rows moved to a now-due record
+    events_stored: int = 0  # pay-change events stored or refreshed since the last fill
 
     @property
     def ok(self) -> bool:
@@ -56,7 +58,11 @@ def run_daily(
     session.commit()
     if get_settings().use_totals_view:
         refresh_totals(session)  # promotion changes current pay without an API write
-    return DailyResult(rates=rates, promoted=promoted)
+    events = 0
+    if get_settings().pay_change_events:
+        events = fill_through_yesterday(session)  # append the days since the last fill
+        session.commit()
+    return DailyResult(rates=rates, promoted=promoted, events_stored=events)
 
 
 def report(result: DailyResult) -> None:
@@ -70,6 +76,10 @@ def report(result: DailyResult) -> None:
     else:
         logger.info("exchange rates: stored %d for %s", rates.stored, rates.rate_date)
     logger.info("compensation: promoted %d due record(s)", result.promoted)
+    logger.info(
+        "pay-change events: stored %d for the days since the last fill",
+        result.events_stored,
+    )
 
 
 def run_once() -> DailyResult:

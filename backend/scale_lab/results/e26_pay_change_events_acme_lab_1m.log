@@ -1,0 +1,8 @@
+[12:43:44] backfill {'seconds': 581.0, 'events': 11773353}
+[12:43:46] size {'rows': 11773353, 'total_mb': 2244.8, 'table': '1340 MB', 'indexes': '905 MB'}
+[12:43:51] report, 1 week    {'events': 0, 'employees_changed': 0, 'identical': True, 'live_ms': 997.6, 'stored_ms': 584.2, 'speed_up': 1.7}
+[12:44:55] report, 1 month   {'events': 109007, 'employees_changed': 109007, 'identical': True, 'live_ms': 26428.1, 'stored_ms': 2139.8, 'speed_up': 12.4}
+[12:45:56] report, 1 quarter {'events': 146849, 'employees_changed': 144929, 'identical': True, 'live_ms': 26039.9, 'stored_ms': 2325.8, 'speed_up': 11.2}
+[12:48:22] report, 1 year    {'events': 1986937, 'employees_changed': 862938, 'identical': True, 'live_ms': 51505.4, 'stored_ms': 11236.5, 'speed_up': 4.6}
+[12:48:28] maintenance {'fill_one_day': {'seconds': 4.36, 'events_stored': 0, 'table_rows_restored': True}, 'recompute_one_employee_ms': 47.2}
+[12:48:40] trigger overhead {'with_trigger': 5.59, 'dirty_rows_created': 5601, 'without_trigger': 5.71, 'rows_inserted': 100000}

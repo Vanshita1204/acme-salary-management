@@ -33,6 +33,7 @@ from app.seed.org_structure import check_org_structure, load_org_structure
 from app.seed.reference import check_reference_data, load_reference_data
 from app.services.employee_totals import refresh_totals
 from app.services.exchange_rates import refresh_exchange_rates
+from app.services.pay_changes import backfill, filled_through
 
 BACKEND = Path(__file__).resolve().parent.parent
 
@@ -94,6 +95,20 @@ def build_totals() -> str:
     return f"employee totals refreshed in {time.perf_counter() - started:.1f}s"
 
 
+def build_pay_change_events() -> str:
+    if not get_settings().pay_change_events:
+        return "pay-change events not in use"
+    with SessionLocal() as session:
+        if filled_through(session) is not None:
+            return "pay-change events already stored"
+        started = time.perf_counter()
+        stored = backfill(session, commit=True)
+        session.commit()
+    return (
+        f"stored {stored:,} pay-change events in {time.perf_counter() - started:.1f}s"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Migrate and seed the database.")
     parser.add_argument("--employees", type=int, default=DEFAULT_COUNT)
@@ -106,6 +121,7 @@ def main() -> None:
     print(fetch_rates(), flush=True)
     print(seed_population(args.employees), flush=True)
     print(build_totals(), flush=True)
+    print(build_pay_change_events(), flush=True)
 
 
 if __name__ == "__main__":

@@ -16,7 +16,6 @@ from datetime import date
 from decimal import Decimal
 
 from sqlalchemy import (
-    ColumnElement,
     Float,
     Numeric,
     Select,
@@ -32,16 +31,12 @@ from sqlalchemy import (
     true,
     union_all,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, array, array_agg
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
 from app.domain.analytics import MIN_PEER_GROUP_SIZE, OUTLIER_HIGH, OUTLIER_LOW
-from app.domain.compensation import NON_INCREASE_REASONS
 from app.models import (
-    ChangeReason,
     Company,
-    CompensationRecord,
     CompensationType,
     Country,
     CurrentCompensation,
@@ -50,6 +45,8 @@ from app.models import (
     JobLevel,
     JobTitle,
 )
+from app.services import pay_changes
+from app.services.change_detail import change_detail
 from app.services.compensation import promote_due_records_for_request, utc_today
 from app.services.directory import (
     DirectoryQuery,
@@ -60,7 +57,6 @@ from app.services.directory import (
 from app.services.employee_totals import employee_totals
 from app.services.errors import Problem, ServiceError
 from app.services.exchange_rates import latest_rates, require_supported_currency
-from app.services.relocation import RELOCATION
 
 CENT = Decimal("0.01")
 ACTIVE = "active"
@@ -645,122 +641,24 @@ def change_report(
         replace(query, statuses=[]),
     ).subquery()
 
-    events = (
-        select(
-            CompensationRecord.employee_id,
-            CompensationRecord.effective_date.label("day"),
-            array_agg(ChangeReason.code.distinct()).label("reasons"),
-            func.bool_or(CompensationType.counts_toward_total).label("touches_ctc"),
-        )
-        .join(people, people.c.employee_id == CompensationRecord.employee_id)
-        .join(ChangeReason, ChangeReason.id == CompensationRecord.change_reason_id)
-        .join(
-            CompensationType,
-            CompensationType.id == CompensationRecord.compensation_type_id,
-        )
-        .where(CompensationRecord.effective_date.between(date_from, date_to))
-        .group_by(CompensationRecord.employee_id, CompensationRecord.effective_date)
-        .subquery("events")
-    )
-
-    # Each record with the date it stopped applying (the next record of the same type;
-    # a later record on the same day replaces it the same day). Set-based, so one pass
-    # over the history instead of a lookup per record.
-    r = CompensationRecord
-    valid = (
-        select(
-            r.employee_id,
-            r.amount,
-            r.currency,
-            CompensationType.period_months,
-            r.effective_date.label("start"),
-            func.lead(r.effective_date)
-            .over(
-                partition_by=(r.employee_id, r.compensation_type_id),
-                order_by=(r.effective_date, r.id),
+    if get_settings().pay_change_events:
+        stored = pay_changes.stored_detail(session, date_from, date_to, people)
+        if stored is not None:
+            return report_from_detail(
+                session, stored.cte("detail"), date_from, date_to, limit
             )
-            .label("until"),
-            CompensationType.counts_toward_total,
-        )
-        .join(people, people.c.employee_id == r.employee_id)
-        .join(CompensationType, CompensationType.id == r.compensation_type_id)
-        .where(r.effective_date <= date_to)
-        .subquery("valid")
-    )
+    detail = change_detail(date_from, date_to, people=people).cte(
+        "detail"
+    )  # used twice below; Postgres computes it once
+    return report_from_detail(session, detail, date_from, date_to, limit)
 
-    # Totals on the day and the day before, in one pass: a record applies on the day
-    # if it started by then and wasn't replaced by then, and on the day before if it
-    # started earlier and wasn't replaced earlier.
-    annual = valid.c.amount * 12 / valid.c.period_months
-    on_day = and_(
-        valid.c.start <= events.c.day,
-        valid.c.until.is_(None) | (valid.c.until > events.c.day),
-    )
-    day_before = and_(
-        valid.c.start < events.c.day,
-        valid.c.until.is_(None) | (valid.c.until >= events.c.day),
-    )
-    totals = (
-        select(
-            events.c.employee_id,
-            events.c.day,
-            events.c.reasons,
-            events.c.touches_ctc,
-            func.sum(annual).filter(day_before).label("before"),
-            func.min(valid.c.currency).filter(day_before).label("before_currency"),
-            func.sum(annual).filter(on_day).label("after"),
-            func.min(valid.c.currency).filter(on_day).label("currency"),
-        )
-        .join(
-            valid,
-            and_(
-                valid.c.employee_id == events.c.employee_id,
-                valid.c.start <= events.c.day,
-                valid.c.until.is_(None) | (valid.c.until >= events.c.day),
-            ),
-        )
-        .where(valid.c.counts_toward_total)
-        .group_by(
-            events.c.employee_id, events.c.day, events.c.reasons, events.c.touches_ctc
-        )
-        .subquery("totals")
-    )
 
-    def has_any(codes) -> ColumnElement:
-        return totals.c.reasons.overlap(cast(array(sorted(codes)), ARRAY(Text)))
-
-    excluded = case(
-        (has_any(NON_INCREASE_REASONS), literal("correction")),
-        (~totals.c.touches_ctc, literal("outside total compensation")),
-        (
-            totals.c.before.is_(None) | (totals.c.before == 0),
-            literal("no previous pay"),
-        ),
-        (totals.c.before_currency != totals.c.currency, literal("currency change")),
-        (
-            totals.c.reasons.contained_by(cast(array([RELOCATION]), ARRAY(Text)))
-            & (totals.c.before == totals.c.after),
-            literal("relocation without a pay change"),
-        ),
-        else_=None,
-    )
-    percent = case(
-        (
-            excluded.is_(None),
-            (totals.c.after - totals.c.before) / totals.c.before * 100,
-        ),
-        else_=None,
-    )
-    detail = select(
-        totals.c.employee_id,
-        totals.c.day,
-        totals.c.reasons,
-        totals.c.currency,
-        totals.c.before,
-        totals.c.after,
-        percent.label("percent"),
-        excluded.label("excluded"),
-    ).cte("detail")  # used twice below; Postgres computes it once
+def report_from_detail(
+    session: Session, detail, date_from: date, date_to: date, limit: int
+) -> ChangeReport:
+    """The summary (employees changed, events, how many count, average increase) and the
+    newest `limit` events of any `detail` with the report's columns. Shared by the live
+    report and the report read from the stored events."""
 
     summary_row = select(
         func.count(detail.c.employee_id.distinct()).label("employees_changed"),

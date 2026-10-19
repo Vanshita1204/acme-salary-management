@@ -88,6 +88,28 @@ erDiagram
         text source
         timestamptz fetched_at
     }
+    EMPLOYEE_TOTALS {
+        bigint employee_id PK,FK
+        numeric total
+    }
+    PAY_CHANGE_EVENTS {
+        bigint employee_id PK,FK
+        date day PK
+        text_array reasons
+        char3 currency FK
+        numeric before_total
+        numeric after_total
+        numeric percent
+        text excluded
+    }
+    PAY_CHANGE_PROGRESS {
+        boolean id PK
+        date filled_through
+    }
+    PAY_CHANGE_DIRTY {
+        bigint employee_id PK,FK
+        date from_day
+    }
 
     CURRENCIES ||--o{ COUNTRIES : "default currency"
     CURRENCIES ||--o{ COMPENSATION_RECORDS : "currency"
@@ -105,3 +127,7 @@ erDiagram
     EMPLOYEES ||--o{ COMPENSATION_RECORDS : "history"
     EMPLOYEES ||--o{ CURRENT_COMPENSATION : "current (one row per type)"
     COMPENSATION_RECORDS ||--o| CURRENT_COMPENSATION : "pointed to by"
+    EMPLOYEES ||--o| EMPLOYEE_TOTALS : "derived total (materialized view)"
+    EMPLOYEES ||--o{ PAY_CHANGE_EVENTS : "derived, one per day of change"
+    CURRENCIES ||--o{ PAY_CHANGE_EVENTS : "currency"
+    EMPLOYEES ||--o| PAY_CHANGE_DIRTY : "events to recompute"

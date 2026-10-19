@@ -1,0 +1,69 @@
+{
+  "environment": {
+    "machine": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "cpu_count": 10,
+    "memory_gb": 16,
+    "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "1310728kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-19T07:03:50+00:00"
+  },
+  "size": {
+    "rows": 116846,
+    "total_mb": 22.4,
+    "table": "13 MB",
+    "indexes": "9256 kB"
+  },
+  "report": {
+    "1 week": {
+      "events": 14,
+      "employees_changed": 14,
+      "identical": true,
+      "live_ms": 169.1,
+      "stored_ms": 20.6,
+      "speed_up": 8.2
+    },
+    "1 month": {
+      "events": 1158,
+      "employees_changed": 1158,
+      "identical": true,
+      "live_ms": 193.6,
+      "stored_ms": 20.7,
+      "speed_up": 9.4
+    },
+    "1 quarter": {
+      "events": 1607,
+      "employees_changed": 1584,
+      "identical": true,
+      "live_ms": 202.2,
+      "stored_ms": 23.9,
+      "speed_up": 8.5
+    },
+    "1 year": {
+      "events": 19946,
+      "employees_changed": 8650,
+      "identical": true,
+      "live_ms": 398.9,
+      "stored_ms": 49.2,
+      "speed_up": 8.1
+    }
+  },
+  "maintenance": {
+    "fill_one_day": {
+      "seconds": 0.02,
+      "events_stored": 0,
+      "table_rows_restored": true
+    },
+    "recompute_one_employee_ms": 10.8
+  },
+  "trigger": {
+    "with_trigger": 2.26,
+    "dirty_rows_created": 2780,
+    "without_trigger": 2.18,
+    "rows_inserted": 50000
+  }
+}

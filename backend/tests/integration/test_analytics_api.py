@@ -3,7 +3,7 @@ reference definitions in `app.domain.analytics` on a small known population."""
 
 import statistics
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import httpx
@@ -17,6 +17,7 @@ from app.models import ChangeReason, CompensationType, ExchangeRate
 from app.seed.change_reasons import load_change_reasons
 from app.seed.compensation_types import load_compensation_types
 from app.seed.reference import load_reference_data
+from app.services import pay_changes
 from app.services.compensation import utc_today
 
 RATE_DAY = date(2099, 1, 1)  # after any real rate, so these are the latest
@@ -400,7 +401,9 @@ def test_unsupported_reporting_currency_is_422(client, world):
 # --- change report ---
 
 
-def test_change_report_and_average_increase(db, client, world):
+def apply_changes(client, world) -> str:
+    """A raise, a correction, a promotion, a change outside total pay, a currency change and a
+    relocation; returns today's date (the last two are dated today)."""
     people, types, reasons = world["people"], world["types"], world["reasons"]
     base = types[("fixed", "base")].id
     # A raise counts; a correction a month later doesn't.
@@ -436,6 +439,11 @@ def test_change_report_and_average_increase(db, client, world):
         json={"country": "IE", "effective_date": today, "changed_by": "pytest"},
     )
     assert moved.status_code == 200, moved.text
+    return today
+
+
+def test_change_report_and_average_increase(db, client, world):
+    today = apply_changes(client, world)
 
     report = get(client, world, "changes", date_from="2025-01-01", date_to=today)
 
@@ -567,3 +575,151 @@ def test_the_stored_totals_are_a_snapshot_until_refreshed(db, client, world, tot
     assert before_refresh == snapshot  # still the old totals
     assert after_refresh["total_cost"] != snapshot["total_cost"]
     assert after_refresh["headcount"] == snapshot["headcount"]
+
+
+# --- stored pay-change events (Scale Lab E26) ---
+
+
+@pytest.fixture
+def stored_events():
+    """Read the pay-changes report from the stored events for the duration of one test."""
+    settings = get_settings()
+    settings.pay_change_events = True
+    yield
+    settings.pay_change_events = False
+
+
+def live_and_stored(db, client, world, **params):
+    """The same report computed live and read from the stored events."""
+    settings = get_settings()
+    settings.pay_change_events = False
+    live = get(client, world, "changes", **params)
+    settings.pay_change_events = True
+    return live, get(client, world, "changes", **params)
+
+
+def yesterday() -> date:
+    return utc_today() - timedelta(days=1)
+
+
+def dirty_employees(db) -> dict[int, date]:
+    return {
+        row.employee_id: row.from_day for row in db.execute(select(pay_changes.dirty))
+    }
+
+
+def test_the_report_from_stored_events_equals_the_live_report(
+    db, client, world, stored_events
+):
+    today = apply_changes(client, world)
+    pay_changes.backfill(db, yesterday())
+
+    for params in (
+        {"date_from": "2025-01-01", "date_to": today},  # reaches today's live tail
+        {"date_from": "2025-01-01", "date_to": str(yesterday())},  # stored days only
+        {"date_from": HIRE, "date_to": HIRE, "limit": 3},  # one stored day
+        {"date_from": today, "date_to": today},  # the live tail alone
+        {"date_from": "2025-01-01", "date_to": today, "country": "GB"},  # a filter
+        {"date_from": "2025-01-01", "date_to": today, "limit": 1},
+    ):
+        live, stored = live_and_stored(db, client, world, **params)
+        assert stored == live, params
+    assert live["events"] > 0
+
+
+def test_nothing_stored_yet_means_the_live_report_is_used(
+    db, client, world, stored_events
+):
+    apply_changes(client, world)
+    assert pay_changes.filled_through(db) is None
+
+    live, stored = live_and_stored(
+        db, client, world, date_from="2025-01-01", date_to=str(utc_today())
+    )
+
+    assert stored == live and stored["events"] > 0
+
+
+def test_a_backdated_record_is_reflected_in_the_next_report(
+    db, client, world, stored_events
+):
+    people, types, reasons = world["people"], world["types"], world["reasons"]
+    base = types[("fixed", "base")].id
+    add(client, people["gb1"], base, reasons["annual_revision"], "2025-04-01", 5500)
+    pay_changes.backfill(db, yesterday())
+    assert dirty_employees(db) == {}
+
+    # A raise dated in the past arrives after the events were stored: gb1's later events
+    # change too, since the total before them is now different.
+    add(client, people["gb1"], base, reasons["promotion"], "2025-02-01", 5200)
+    assert dirty_employees(db) == {people["gb1"]["id"]: date(2025, 2, 1)}
+
+    live, stored = live_and_stored(
+        db, client, world, date_from="2025-01-01", date_to=str(yesterday())
+    )
+
+    assert stored == live
+    assert {
+        i["effective_date"] for i in stored["items"] if i["first_name"] == "gb1"
+    } >= {"2025-02-01", "2025-04-01"}
+    assert dirty_employees(db) == {}  # recomputed, then cleared
+
+
+def test_ordinary_writes_do_not_make_anyone_dirty(db, client, world, stored_events):
+    people, types, reasons = world["people"], world["types"], world["reasons"]
+    base = types[("fixed", "base")].id
+    pay_changes.backfill(db, yesterday())
+
+    add(client, people["gb1"], base, reasons["annual_revision"], str(utc_today()), 5500)
+    add(
+        client,
+        people["gb2"],
+        base,
+        reasons["annual_revision"],
+        str(utc_today() + timedelta(days=30)),
+        5600,
+    )
+
+    assert dirty_employees(db) == {}
+
+
+def test_the_daily_fill_appends_new_days_and_can_be_repeated(
+    db, client, world, stored_events
+):
+    people, types, reasons = world["people"], world["types"], world["reasons"]
+    base = types[("fixed", "base")].id
+    pay_changes.backfill(db, yesterday() - timedelta(days=1))
+    add(client, people["gb1"], base, reasons["annual_revision"], str(yesterday()), 5500)
+    assert pay_changes.filled_through(db) == yesterday() - timedelta(days=1)
+
+    stored = pay_changes.fill_through_yesterday(db)
+
+    assert stored >= 1
+    assert pay_changes.filled_through(db) == yesterday()
+    # gb1's record was written moments ago and dated inside the days just filled, so the
+    # fill lists them for a recheck, closing the window in which a concurrent writer is missed.
+    # (Everyone in this test's world was also just created, so they are listed too.)
+    assert people["gb1"]["id"] in dirty_employees(db)
+    assert pay_changes.fill_through_yesterday(db) == 0  # nothing left to append
+    live, stored_report = live_and_stored(
+        db, client, world, date_from="2025-01-01", date_to=str(utc_today())
+    )
+    assert stored_report == live
+
+
+def test_a_bulk_insert_of_backdated_records_adds_one_dirty_row_per_employee(
+    db, client, world, stored_events
+):
+    people, types, reasons = world["people"], world["types"], world["reasons"]
+    base = types[("fixed", "base")].id
+    pay_changes.backfill(db, yesterday())
+    add(client, people["in1"], base, reasons["annual_revision"], "2025-03-01", 420000)
+    add(client, people["in1"], base, reasons["annual_revision"], "2025-01-01", 410000)
+    add(client, people["in2"], base, reasons["annual_revision"], "2025-02-01", 420000)
+
+    assert dirty_employees(db) == {
+        people["in1"]["id"]: date(
+            2025, 1, 1
+        ),  # the earliest of in1's two backdated records
+        people["in2"]["id"]: date(2025, 2, 1),
+    }

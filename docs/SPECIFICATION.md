@@ -146,6 +146,7 @@ All analytics include **active employees only** and use **current compensation c
 | Result counts | Exact counts | Approximate counts, or counts only when filters change |
 | Search | Indexed prefix search | Postgres trigram (GIN) indexes for substring search |
 | Analytics | SQL aggregation on the current-compensation table | Same, plus cached or pre-aggregated results refreshed when data changes |
+| Pay-change report | Per-day events computed from the history once and stored (`pay_change_events`, see `docs/DATABASE_DESIGN.md`); only today's events are computed on request | Same; the per-day fill and the backfill scale with the history |
 | Import and export | Synchronous request | Background jobs with progress tracking and streamed files |
 | Seeding | Batched inserts | Bulk load (`COPY`) |
 

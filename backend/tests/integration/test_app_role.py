@@ -98,6 +98,9 @@ def test_the_guarding_triggers_are_all_enabled(db):
         "trg_validate_compensation_record": "O",
         "trg_comp_records_no_update": "O",
         "trg_comp_records_no_truncate": "O",
+        # Not a guard: it only lists employees whose stored pay-change events need
+        # recomputing after a backdated record (docs/DATABASE_DESIGN.md, "Derived data").
+        "trg_comp_records_pay_change_dirty": "O",
     }
 
 
@@ -419,3 +422,20 @@ def test_the_app_role_can_read_and_refresh_the_totals_view_but_not_change_it(db,
     assert "must be owner" in message or "permission denied" in message, message
     message = denied(db, "DROP MATERIALIZED VIEW employee_totals")
     assert "must be owner" in message or "permission denied" in message, message
+
+
+def test_the_app_role_can_run_the_whole_pay_change_cycle_but_not_delete_events(
+    db, app_role
+):
+    from datetime import date
+
+    from app.services import pay_changes
+
+    become(db, app_role)
+    pay_changes.backfill(db, date(2026, 1, 1))  # insert, upsert and update progress
+    pay_changes.process_dirty(db)  # takes entries off the work queue
+    assert pay_changes.filled_through(db) == date(2026, 1, 1)
+    assert "permission denied" in denied(db, "DELETE FROM pay_change_events")
+    assert "permission denied" in denied(
+        db, "INSERT INTO pay_change_dirty VALUES (1, current_date)"
+    )

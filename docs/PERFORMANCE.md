@@ -1009,6 +1009,98 @@ On Render the database is a separate server, so every round trip pays network la
 
 ---
 
+## E25 — The live app on Render, before and after
+
+Everything from E9 to E24 was measured on a laptop, some of it with a proxy that simulated a database on another machine. The original complaint was the hosted app. This measures the deployed app itself, before and after the release that carried E9 to E24 (pull request #14), from one location over the internet. `python -m scale_lab.live_check --url <site> --label <name>`.
+
+**Setup:** Render free tier, the 10,000-employee database. "Before" is `main` at `aec73fb`, "after" is `main` at `7f9dbc6`. Each cell is the median of 8 sequential requests after 2 warm-ups, with a throwaway query parameter so the response cache could not answer them. Server and database time come from the `Server-Timing` header. The "total" column also includes the internet: a trivial request (the reference list) takes about **310 ms** from here whatever the server does, so totals understate the change in server time.
+
+**Predictions (stated before the measurement, in the pull request and the conversation):**
+
+1. The directory search falls from about 480 ms to a few milliseconds (trigram indexes).
+2. The CSV export gets faster and arrives compressed.
+3. The directory and profile make fewer database round trips and get a little faster.
+4. The pay-insight views stay slow, 1 to 3 seconds, because the free-tier CPU is the limit.
+
+**Results** (server time, 10,000 employees):
+
+| Request | Server before → after | Speed-up | Database before → after | Queries | Total before → after |
+| --- | --- | --- | --- | --- | --- |
+| reference list | 6 → 4 ms | 1.5× | 2 → 2 ms | 1 → 1 | 311 → 310 ms |
+| directory page | 26 → 20 ms | 1.3× | 10 → 8 ms | 6 → 3 | 339 → 334 ms |
+| directory search | 503 → 207 ms | 2.4× | 483 → 195 ms | 6 → 3 | 818 → 507 ms |
+| employee profile | 19 → 11 ms | 1.7× | 8 → 5 ms | 6 → 3 | 357 → 316 ms |
+| pay insight: summary | 1,129 → 934 ms | 1.2× | 1,110 → 920 ms | 5 → 2 | 1,465 → 1,247 ms |
+| pay insight: outliers | 2,620 → 986 ms | 2.7× | 2,555 → 966 ms | 5 → 2 | 3,109 → 1,509 ms |
+| pay insight: histogram | 1,433 → 697 ms | 2.1× | 1,403 → 685 ms | 6 → 2 | 1,737 → 999 ms |
+| CSV export | 4,779 → 1,908 ms | 2.5× | 1,274 → 1,006 ms | 15 → 3 | 6,533 → 3,821 ms |
+
+Other findings from the same runs: the first request after the service had been idle took **54 s** (a cold start); after the redeploy it took 0.9 s because the service was already awake, so the wake-up cost is not compared. The JavaScript bundle already arrived gzipped (102 KB before, 104 KB after) because **Render's edge compresses text responses itself**, so the gzip added in E21 changes little there, apart from the CSV export (1,498,307 bytes plain before, 397,139 bytes gzipped after). The bundle now carries `Cache-Control: public, max-age=31536000, immutable`, so a repeat visit does not download it.
+
+**Verdicts:**
+
+1. **Partly refuted.** Search fell from 503 to **207 ms**, not to a few milliseconds. 195 ms of that is still database time, against about 25 ms on a laptop. Two explanations fit and the measurement cannot separate them: the trigram migration skipped its indexes on Render (it is written to do so when `pg_trgm` is not permitted), or the indexes exist but Postgres chooses a sequential scan, which is reasonable on 10,000 rows. The improvement seen could come from the prepared-statement fix alone. **Not verified**: it needs `\d employees` in Render's database shell, to look for `ix_employees_trgm_*`.
+2. **Confirmed.** The export's server time fell from 4.8 s to 1.9 s (2.5×), and its download from 1.5 MB to 397 KB; the whole request from 6.5 s to 3.8 s.
+3. **Confirmed for the queries, smaller than simulated for the time.** Queries per request fell from 6 to 3, but the directory page gained only 6 ms (26 → 20) and the profile 8 ms. Round trips on Render cost less than the 1 to 3 ms the proxy simulated, so the saving is smaller than E24 predicted for a distant database.
+4. **Better than predicted for two views, as predicted for one.** Outliers fell from 2.6 s to **0.99 s (2.7×)** and the histogram from 1.4 s to **0.70 s (2.1×)**, from the query rewrites (E11) and the prepared-statement fix. The summary fell only from 1.13 s to 0.93 s (1.2×). All three are still 0.7 to 1.0 s of pure database time on the shared CPU, about 11 to 14 times slower than the same view on a laptop (65, 89 and 62 ms there for the summary, outliers and histogram); nothing in this release changes that on 10,000 employees, and a repeat request is served from the response cache.
+
+**Limits:** one location, one run, 8 samples per cell; free-tier performance varies from minute to minute. Differences under about 20% (the reference list, the directory page, the summary) are within what that variation could produce.
+
+---
+
+## E26 — Precomputed pay-change events
+
+E16 found the pay-changes report costs a fixed amount, windowing over the whole compensation history, however short the date range, and accepted it because it takes 0.2 to 0.4 s at 10,000 employees on a laptop. E25 then measured the live app: **7.5 s on its own and 15.8 s when the Pay insights page loads its views together**, at 10,000 employees on Render's free tier, about 20 to 40 times slower than the laptop and the only pay-insight view above 2.2 s when run alone. So the report needs fixing in production, not only at a million employees, and the fix E16 named is the right one: store the per-day events once and read them by date range.
+
+**Design** (the tables, the trigger and the maintenance rules are specified in `docs/DATABASE_DESIGN.md`, "Derived data"): `pay_change_events` holds one row per employee per day on which their pay changed (totals before and after, the percentage, why an event is excluded), independent of any filter; a one-row `pay_change_progress` records the day up to which events are stored; a statement-level trigger lists in `pay_change_dirty` any employee who receives a **backdated** record, whose later events are then recomputed; the daily job appends yesterday; today's events are computed live. The report keeps its existing definition and its live computation, which stays as the source for every fill and as the check in the tests.
+
+**Hypotheses (written before building):**
+
+1. **Speed at 10,000 employees:** read from the table, a one-year report takes **under 25 ms** of server time on the laptop (399 ms today) and a one-week report under 10 ms; on Render the one-year report takes **under 0.5 s** against 7.5 s, **at least 15 times faster**.
+2. **Same answers:** the report from the table equals the live computation for any date range, filter and combination of corrections, relocations, currency changes and backdated records (a test compares them; the live app's figures must not change).
+3. **Maintenance is cheap:** a backdated record is reflected in the next report; ordinary writes (dated today or later) add no work, and the trigger costs under 5% on a 100,000-employee bulk insert (the E13 test).
+4. **Cost to build:** the backfill takes under 3 s at 10,000 employees on the laptop and under 3 minutes at 1,000,000; filling one day takes under 1 s at 10,000 and under 3 s at 1,000,000 (unmeasured; it is the E16 restricted-employees case, which should suit a single day).
+5. **Size:** about 20 MB at 10,000 employees and about 2 GB at 1,000,000 (an estimate from typical column widths).
+6. **At 1,000,000 employees** the one-year report, now an aggregation of about 2 M stored events, takes **under 5 s**, against 43 s.
+
+**Results** (in-process, a fresh session per call; stored = the report read from `pay_change_events` plus the live tail; live = the previous computation; `identical` means the two returned equal reports):
+
+| Range ending today | 10,000 employees: events | live → stored | 1,000,000 employees: events | live → stored |
+| --- | --- | --- | --- | --- |
+| 1 week | 14 | 169 → 21 ms (8.2×) | 0 | 1.0 s → 0.6 s (1.7×) |
+| 1 month | 1,158 | 194 → 21 ms (9.4×) | 109,007 | 26.4 s → 2.1 s (12.4×) |
+| 1 quarter | 1,607 | 202 → 24 ms (8.5×) | 146,849 | 26.0 s → 2.3 s (11.2×) |
+| 1 year | 19,946 | 399 → 49 ms (8.1×) | 1,986,937 | 51.5 s → 11.2 s (4.6×) |
+
+All eight comparisons were **identical**, and so were the seven new tests' scenarios (a raise, a correction, a promotion, a change outside total pay, a currency change, a relocation, a backdated record, the daily fill, an empty database).
+
+**Maintenance and size:**
+
+| | 10,000 employees | 1,000,000 employees |
+| --- | --- | --- |
+| Backfill of all history | 4.2 s (116,846 events) | **581 s** (11,773,353 events) |
+| Table + indexes | 22 MB (13 + 9) | 2,245 MB (1,340 + 905) |
+| Fill one day (daily job) | 0.02 s | 4.4 s |
+| Recompute one employee | 11 ms | 47 ms |
+| Trigger cost on a bulk insert (copying 50,000 / 100,000 records, rolled back) | 2.26 s vs 2.18 s without (+3.7%), 2,780 employees listed | 5.59 s vs 5.71 s without (within noise), 5,601 employees listed |
+
+The event counts equal the number of (employee, date) pairs I counted in the history before building anything (116,846 and 11,773,353).
+
+**Verdicts:**
+
+1. **Partly refuted at 10,000 employees.** The year report takes **49 ms**, not under 25: 8.1× faster than live (399 ms) but not the 16× I predicted. The shorter ranges are 21 to 24 ms (8.2 to 9.4×). The fixed part, about 20 ms, is the report's other work (the promotion check, the dirty list, today's events computed live, the summary and page queries) and is now the whole cost. Render, predicted under 0.5 s against 7.5 s, is **not yet measured**: it needs the deploy.
+2. **Confirmed.** Identical reports everywhere I compared them.
+3. **Confirmed.** A backdated record is reflected in the next report (a test; the next report recomputes only that employee, 11 to 47 ms); records dated today or later list nobody; the trigger's cost is +3.7% at 10,000 and not measurable at 1M.
+4. **Mostly refuted on cost to build.** The backfill took 4.2 s at 10,000 (predicted under 3 s) and **9.7 minutes** at 1,000,000 (predicted under 3 minutes): it works a year at a time and each year windows all the history before it, so the cost grows with the history. Filling one day took 0.02 s at 10,000 as predicted, but **4.4 s at 1,000,000** (predicted under 3 s) for a day with no events: the time is the fixed work of the fill, mostly scanning the 17.7 M records for the recent-writers recheck, not computing events.
+5. **Confirmed.** 22 MB and 2.2 GB (the indexes are 40% of it, more than I assumed).
+6. **Refuted for the year at 1,000,000 employees.** The one-year report takes **11.2 s** (live 51.5 s, 4.6× faster), not under 5 s: it reads and joins 2 M stored events. A month or a quarter, the ranges people actually ask for, is **12 times faster: 26 s to 2.1 to 2.3 s**.
+
+**Trade-offs:** 2.2 GB at 1M (or 22 MB at 10k) of derived data to keep; a trigger on the history table; a daily fill; a one-time backfill at bootstrap (10 minutes at 1M); and the invariant "stored rows equal the live computation unless the employee is in the dirty list", which the tests enforce but a new write path that bypassed the history table would break.
+
+**Left:** the fixed 20 ms (0.58 s at 1M) and the one-year range at 1M could be cut by a covering index or a simpler summary query; the fill's recent-writers check could use an index on `created_at`; neither was tried. The live behaviour of the deployed app is measured in the next step.
+
+---
+
 ## Summary — what the lab confirmed or changed
 
 | Decision | Status | Evidence |
@@ -1040,3 +1132,5 @@ On Render the database is a separate server, so every round trip pays network la
 | CSV export | **Changed** (columns only, one totals query, leaner writer) | E22: 10k export 455 ms to 178 ms as an HTTP request, identical file; 1M one-country export 1.7-1.9x faster; a joined-totals first attempt was slower at 1M |
 | Serialisation (`orjson`) | **Not adopted** (refuted) | E23: the response encoder is 0.09 ms of a 12 ms directory request and 0.55 ms of 89 ms for the largest view; FastAPI already serialises through Pydantic's Rust core |
 | Database round trips | **Changed** (idle-only ping, remembered currencies and rates, promotion once a day) | E24: directory 9 to 5 round trips, 58 to 35 ms at 3 ms of database latency; responses byte-identical; one failed request after a database restart is the cost |
+| Live app on Render, before and after the release | Measured | E25: outliers 2.6 s to 1.0 s, histogram 1.4 s to 0.7 s, export 4.8 s to 1.9 s (1.5 MB to 0.4 MB), 6 to 3 queries per request; search 503 to 207 ms (trigram indexes on Render unverified); summary only 1.2x |
+| Precomputed pay-change events | **Changed** (production and development; tables `pay_change_events`, `_progress`, `_dirty`, migration `0015`) | E26: report 8x faster at 10,000 employees (399 to 49 ms), 12x for a month at 1M (26 to 2.1 s), 4.6x for a year (51 to 11 s); identical results; 2.2 GB and a 10-minute backfill at 1M; live Render result pending |
