@@ -19,6 +19,7 @@ from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import distinct_on, insert
 from sqlalchemy.orm import Session
 
+from app.core.cache import ExpiringValue
 from app.core.config import get_settings
 from app.db.session import SessionLocal
 from app.domain.currency import rates_to_usd_from_usd_base
@@ -149,6 +150,7 @@ def refresh_exchange_rates(
         return RefreshResult(ok=False, error=str(exc))
 
     stored, missing = store_rates(session, fetched)
+    forget_rates()  # a stored change shows up in the next request, not after the cache time
     if missing:
         logger.warning(
             "Provider has no rate for supported currencies: %s", ", ".join(missing)
@@ -161,18 +163,38 @@ def refresh_exchange_rates(
 UNSUPPORTED_CURRENCY = "unsupported currency: {code}"
 
 
+# Remembered in memory (Scale Lab E24): the latest rates for `reference_cache_seconds`, and the
+# currencies known to exist for as long as the process runs: currencies are only ever added,
+# so a code seen once stays valid. A code not remembered is checked in the database, so a
+# currency added a moment ago works at once.
+rates_cache: ExpiringValue[tuple[dict[str, Decimal], dict[str, date]]] = ExpiringValue(
+    get_settings().reference_cache_seconds
+)
+known_currencies: set[str] = set()
+
+
+def forget_rates() -> None:
+    """Called after any write through the API, and after a rate refresh."""
+    rates_cache.invalidate()
+
+
 def require_supported_currency(session: Session, code: str) -> str:
     """Upper-cased `code`, or a 422 if it isn't a currency the app knows (FR-8's
     reporting-currency selector). A supported currency without a stored rate is not an
     error here: conversions into it come back empty instead."""
     code = code.upper()
+    if rates_cache.ttl > 0 and code in known_currencies:
+        return code
     if session.get(Currency, code) is None:
         raise ServiceError(Problem.INVALID, UNSUPPORTED_CURRENCY.format(code=code))
+    if rates_cache.ttl > 0:
+        known_currencies.add(code)
     return code
 
 
-def latest_rates(session: Session) -> tuple[dict[str, Decimal], dict[str, date]]:
-    """Most recent stored rate per currency, and the date each of those rates is from."""
+def load_latest_rates(
+    session: Session,
+) -> tuple[dict[str, Decimal], dict[str, date]]:
     rows = session.execute(
         select(ExchangeRate.currency, ExchangeRate.rate_to_usd, ExchangeRate.rate_date)
         .ext(distinct_on(ExchangeRate.currency))
@@ -182,6 +204,12 @@ def latest_rates(session: Session) -> tuple[dict[str, Decimal], dict[str, date]]
         {row.currency: row.rate_to_usd for row in rows},
         {row.currency: row.rate_date for row in rows},
     )
+
+
+def latest_rates(session: Session) -> tuple[dict[str, Decimal], dict[str, date]]:
+    """Most recent stored rate per currency, and the date each of those rates is from.
+    The dictionaries may be shared between requests: treat them as read-only."""
+    return rates_cache.get(lambda: load_latest_rates(session))
 
 
 def main() -> None:

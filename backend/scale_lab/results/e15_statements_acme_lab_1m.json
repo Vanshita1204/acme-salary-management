@@ -1,0 +1,276 @@
+{
+  "environment": {
+    "machine": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "cpu_count": 10,
+    "memory_gb": 16,
+    "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "1310728kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-17T19:03:27+00:00"
+  },
+  "load": {
+    "clients": 4,
+    "requests": 174,
+    "errors": 0,
+    "throughput_rps": 1.6,
+    "by_request": {
+      "departments": {
+        "n": 5,
+        "p50_ms": 7.2,
+        "p95_ms": 30.8
+      },
+      "job-titles": {
+        "n": 6,
+        "p50_ms": 6.7,
+        "p95_ms": 31.2
+      },
+      "job-levels": {
+        "n": 7,
+        "p50_ms": 6.3,
+        "p95_ms": 9.4
+      },
+      "countries": {
+        "n": 8,
+        "p50_ms": 52.9,
+        "p95_ms": 75.1
+      },
+      "currencies": {
+        "n": 8,
+        "p50_ms": 9.0,
+        "p95_ms": 9.9
+      },
+      "companies": {
+        "n": 8,
+        "p50_ms": 6.3,
+        "p95_ms": 9.0
+      },
+      "compensation-types": {
+        "n": 8,
+        "p50_ms": 5.9,
+        "p95_ms": 9.9
+      },
+      "change-reasons": {
+        "n": 8,
+        "p50_ms": 5.6,
+        "p95_ms": 21.6
+      },
+      "exchange-rates/latest": {
+        "n": 8,
+        "p50_ms": 7.2,
+        "p95_ms": 10.9
+      },
+      "directory first page": {
+        "n": 8,
+        "p50_ms": 168.1,
+        "p95_ms": 245.6
+      },
+      "directory search": {
+        "n": 8,
+        "p50_ms": 74.3,
+        "p95_ms": 119.5
+      },
+      "directory filtered": {
+        "n": 8,
+        "p50_ms": 463.4,
+        "p95_ms": 506.1
+      },
+      "profile 1000": {
+        "n": 8,
+        "p50_ms": 23.7,
+        "p95_ms": 25.0
+      },
+      "profile 50000": {
+        "n": 8,
+        "p50_ms": 17.5,
+        "p95_ms": 18.5
+      },
+      "profile 500000": {
+        "n": 8,
+        "p50_ms": 15.7,
+        "p95_ms": 17.5
+      },
+      "summary": {
+        "n": 8,
+        "p50_ms": 4940.5,
+        "p95_ms": 5167.8
+      },
+      "stats": {
+        "n": 8,
+        "p50_ms": 3372.6,
+        "p95_ms": 4326.8
+      },
+      "role by country": {
+        "n": 8,
+        "p50_ms": 3656.8,
+        "p95_ms": 4149.7
+      },
+      "histogram": {
+        "n": 8,
+        "p50_ms": 3222.9,
+        "p95_ms": 3794.2
+      },
+      "outliers": {
+        "n": 8,
+        "p50_ms": 7684.1,
+        "p95_ms": 8824.6
+      },
+      "composition": {
+        "n": 8,
+        "p50_ms": 4095.7,
+        "p95_ms": 5701.2
+      },
+      "pay changes": {
+        "n": 8,
+        "p50_ms": 25982.8,
+        "p95_ms": 28735.9
+      },
+      "export": {
+        "n": 4,
+        "p50_ms": 139.6,
+        "p95_ms": 140.3
+      }
+    }
+  },
+  "total_ms": 417372.5,
+  "statements": [
+    {
+      "query": "WITH detail AS (SELECT totals.employee_id AS employee_id, totals.day AS day, totals.reasons AS reasons, totals.currency AS currency, totals.before AS before, totals.after AS after, CASE WHEN (CASE WHEN (totals.reasons && CAST(ARRAY[$1::VARCHAR] AS TEXT[])) THEN $2::VARCHAR WHEN (NOT totals.touches_ctc) THEN $3::VARCHAR WHEN (totals.before IS NULL OR totals.before = $4::INTEGER) THEN $5::VARCHAR WH",
+      "calls": 8,
+      "total_ms": 206143.9,
+      "share_percent": 49.4,
+      "mean_ms": 25767.99,
+      "max_ms": 28310.1,
+      "rows": 200
+    },
+    {
+      "query": "SELECT employees.currency, count(*) AS count_1 FROM employees WHERE employees.status = $1::VARCHAR AND (EXISTS (SELECT * FROM current_compensation, compensation_types WHERE current_compensation.employee_id = employees.id AND current_compensation.compensation_type_id = compensation_types.id AND compensation_types.counts_toward_total)) GROUP BY employees.currency",
+      "calls": 48,
+      "total_ms": 47715.8,
+      "share_percent": 11.4,
+      "mean_ms": 994.08,
+      "max_ms": 1675.2,
+      "rows": 576
+    },
+    {
+      "query": "WITH priced AS (SELECT anon_2.employee_id AS employee_id, anon_2.company_id AS company_id, anon_2.department_id AS department_id, anon_2.job_title_id AS job_title_id, anon_2.job_level_id AS job_level_id, anon_2.country AS country, anon_2.currency AS currency, anon_2.total_local AS total_local, anon_2.total AS total FROM (SELECT employees.id AS employee_id, employees.company_id AS company_id, emplo",
+      "calls": 8,
+      "total_ms": 46586.8,
+      "share_percent": 11.2,
+      "mean_ms": 5823.35,
+      "max_ms": 6801.6,
+      "rows": 381152
+    },
+    {
+      "query": "WITH priced AS (SELECT anon_1.employee_id AS employee_id, anon_1.company_id AS company_id, anon_1.department_id AS department_id, anon_1.job_title_id AS job_title_id, anon_1.job_level_id AS job_level_id, anon_1.country AS country, anon_1.currency AS currency, anon_1.total_local AS total_local, anon_1.total AS total FROM (SELECT employees.id AS employee_id, employees.company_id AS company_id, emplo",
+      "calls": 8,
+      "total_ms": 27693.8,
+      "share_percent": 6.6,
+      "mean_ms": 3461.73,
+      "max_ms": 3701.8,
+      "rows": 264
+    },
+    {
+      "query": "SELECT compensation_types.category, sum(((current_compensation.amount * $1::INTEGER) / CAST(compensation_types.period_months AS NUMERIC)) * CASE WHEN (anon_1.currency = $2::VARCHAR) THEN $3 ELSE anon_2.rate_to_usd / CAST((SELECT anon_2.rate_to_usd FROM (SELECT DISTINCT ON (exchange_rates.currency) exchange_rates.currency AS currency, exchange_rates.rate_to_usd AS rate_to_usd FROM exchange_rates OR",
+      "calls": 8,
+      "total_ms": 25112.1,
+      "share_percent": 6.0,
+      "mean_ms": 3139.01,
+      "max_ms": 4616.7,
+      "rows": 48
+    },
+    {
+      "query": "SELECT job_titles.id, job_titles.name, job_levels.id AS id_1, job_levels.code, anon_1.country, count(*) AS count_1, avg(anon_1.total) AS avg_1, percentile_cont($1) WITHIN GROUP (ORDER BY anon_1.total) AS percentile_cont_1 FROM (SELECT employees.id AS employee_id, employees.company_id AS company_id, employees.department_id AS department_id, employees.job_title_id AS job_title_id, employees.job_leve",
+      "calls": 8,
+      "total_ms": 20472.3,
+      "share_percent": 4.9,
+      "mean_ms": 2559.04,
+      "max_ms": 2710.2,
+      "rows": 16128
+    },
+    {
+      "query": "WITH priced AS (SELECT anon_1.total AS total FROM (SELECT employees.id AS employee_id, employees.company_id AS company_id, employees.department_id AS department_id, employees.job_title_id AS job_title_id, employees.job_level_id AS job_level_id, employees.current_country AS country, employees.currency AS currency, anon_2.total AS total_local, anon_2.total * CASE WHEN (employees.currency = $1::VARCH",
+      "calls": 8,
+      "total_ms": 20079.6,
+      "share_percent": 4.8,
+      "mean_ms": 2509.95,
+      "max_ms": 2809.0,
+      "rows": 160
+    },
+    {
+      "query": "SELECT departments.id, departments.name, count(*) AS count_1, avg(anon_1.total) AS avg_1, percentile_cont($1) WITHIN GROUP (ORDER BY anon_1.total) AS percentile_cont_1, min(anon_1.total) AS min_1, max(anon_1.total) AS max_1 FROM (SELECT employees.id AS employee_id, employees.company_id AS company_id, employees.department_id AS department_id, employees.job_title_id AS job_title_id, employees.job_le",
+      "calls": 8,
+      "total_ms": 18882.5,
+      "share_percent": 4.5,
+      "mean_ms": 2360.31,
+      "max_ms": 2763.2,
+      "rows": 64
+    },
+    {
+      "query": "SELECT count(*) AS count_1 FROM (SELECT employees.id AS id FROM employees WHERE employees.department_id IN ($1::BIGINT) AND employees.current_country IN ($2::VARCHAR)) AS anon_1",
+      "calls": 8,
+      "total_ms": 3076.5,
+      "share_percent": 0.7,
+      "mean_ms": 384.57,
+      "max_ms": 426.2,
+      "rows": 8
+    },
+    {
+      "query": "SELECT count(*) AS count_1 FROM (SELECT employees.id AS id FROM employees) AS anon_1",
+      "calls": 8,
+      "total_ms": 806.8,
+      "share_percent": 0.2,
+      "mean_ms": 100.85,
+      "max_ms": 104.2,
+      "rows": 8
+    },
+    {
+      "query": "SELECT employees.id, employees.code, employees.company_id, employees.first_name, employees.last_name, employees.email, employees.department_id, employees.job_title_id, employees.job_level_id, employees.current_country, employees.currency, employees.status, employees.hire_date, employees.termination_date, employees.created_at, employees.updated_at, lower(employees.last_name) AS k0, lower(employees.",
+      "calls": 8,
+      "total_ms": 303.5,
+      "share_percent": 0.1,
+      "mean_ms": 37.94,
+      "max_ms": 43.9,
+      "rows": 408
+    },
+    {
+      "query": "SELECT current_compensation.employee_id, sum((current_compensation.amount * $1::INTEGER) / CAST(compensation_types.period_months AS NUMERIC)) AS total FROM current_compensation JOIN compensation_types ON compensation_types.id = current_compensation.compensation_type_id WHERE compensation_types.counts_toward_total AND current_compensation.employee_id IN ($2::BIGINT, $3::BIGINT, $4::BIGINT, $5::BIGI",
+      "calls": 4,
+      "total_ms": 207.8,
+      "share_percent": 0.0,
+      "mean_ms": 51.96,
+      "max_ms": 54.3,
+      "rows": 872
+    },
+    {
+      "query": "SELECT current_compensation.employee_id, sum((current_compensation.amount * $1::INTEGER) / CAST(compensation_types.period_months AS NUMERIC)) AS total FROM current_compensation JOIN compensation_types ON compensation_types.id = current_compensation.compensation_type_id WHERE compensation_types.counts_toward_total AND current_compensation.employee_id IN ($2::BIGINT, $3::BIGINT, $4::BIGINT, $5::BIGI",
+      "calls": 8,
+      "total_ms": 72.2,
+      "share_percent": 0.0,
+      "mean_ms": 9.02,
+      "max_ms": 17.8,
+      "rows": 400
+    },
+    {
+      "query": "SELECT employees.id, employees.code, employees.company_id, employees.first_name, employees.last_name, employees.email, employees.department_id, employees.job_title_id, employees.job_level_id, employees.current_country, employees.currency, employees.status, employees.hire_date, employees.termination_date, employees.created_at, employees.updated_at, departments_1.id AS id_1, departments_1.name, depa",
+      "calls": 4,
+      "total_ms": 54.8,
+      "share_percent": 0.0,
+      "mean_ms": 13.69,
+      "max_ms": 16.1,
+      "rows": 872
+    },
+    {
+      "query": "SELECT current_compensation.employee_id, sum((current_compensation.amount * $1::INTEGER) / CAST(compensation_types.period_months AS NUMERIC)) AS total FROM current_compensation JOIN compensation_types ON compensation_types.id = current_compensation.compensation_type_id WHERE compensation_types.counts_toward_total AND current_compensation.employee_id IN ($2::BIGINT, $3::BIGINT, $4::BIGINT, $5::BIGI",
+      "calls": 8,
+      "total_ms": 52.8,
+      "share_percent": 0.0,
+      "mean_ms": 6.59,
+      "max_ms": 12.9,
+      "rows": 400
+    }
+  ]
+}

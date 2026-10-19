@@ -90,3 +90,49 @@ def test_without_a_build_the_site_is_the_api_alone(tmp_path):
     site = TestClient(create_site(tmp_path / "missing"))
     assert site.get("/api/health").status_code == 200
     assert site.get("/").status_code == 404
+
+
+# --- compression and cache headers (Scale Lab E21) ---
+
+GZIP = {"Accept-Encoding": "gzip"}
+PLAIN = {"Accept-Encoding": "identity"}
+
+
+def test_large_api_responses_are_gzipped_when_the_browser_accepts_it():
+    from app.main import app
+
+    client = TestClient(app)
+    compressed = client.get("/openapi.json", headers=GZIP)
+    plain = client.get("/openapi.json", headers=PLAIN)
+
+    assert compressed.headers["content-encoding"] == "gzip"
+    assert "content-encoding" not in plain.headers
+    assert compressed.json() == plain.json()  # the client undoes the compression
+    assert compressed.num_bytes_downloaded < plain.num_bytes_downloaded / 3
+    assert "server-timing" in compressed.headers  # still measured
+
+
+def test_small_responses_are_not_compressed():
+    from app.main import app
+
+    response = TestClient(app).get("/health", headers=GZIP)
+
+    assert "content-encoding" not in response.headers
+
+
+def test_the_hosted_site_compresses_once_and_its_assets_are_cached_for_good(dist):
+    (dist / "assets" / "big.js").write_text("const x = 1;\n" * 400)
+    site = TestClient(create_site(dist))
+
+    asset = site.get("/assets/big.js", headers=GZIP)
+    api = site.get("/api/openapi.json", headers=GZIP)
+
+    assert asset.headers["content-encoding"] == "gzip"
+    assert asset.headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert api.headers["content-encoding"] == "gzip"  # once, not "gzip, gzip"
+    assert api.json()["info"]["title"] == "ACME Salary Management"
+    assert site.get("/", headers=GZIP).headers["cache-control"] == "no-cache"
+
+
+def test_compression_is_on_by_default():
+    assert Settings(database_url="postgresql://x/y").compress_responses is True

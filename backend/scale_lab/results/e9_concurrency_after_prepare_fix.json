@@ -1,0 +1,198 @@
+{
+  "environment": {
+    "machine": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "cpu_count": 10,
+    "memory_gb": 16,
+    "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "163848kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-16T12:23:39+00:00"
+  },
+  "database": "acme_lab_1m",
+  "config": {
+    "workers": 1,
+    "pool_size": 5,
+    "max_overflow": 10,
+    "duration_s": 15.0,
+    "analytics_duration_s": 60,
+    "cache": "off"
+  },
+  "results": {
+    "directory": [
+      {
+        "clients": 1,
+        "requests": 86,
+        "errors": 0,
+        "error_statuses": {},
+        "throughput_rps": 5.6,
+        "p50_ms": 74.1,
+        "p95_ms": 529.5,
+        "p99_ms": 565.2,
+        "max_ms": 565.2,
+        "server_p50_ms": 72.5,
+        "by_request": {
+          "first page": {
+            "n": 22,
+            "p50_ms": 45.6,
+            "p95_ms": 86.1
+          },
+          "search": {
+            "n": 22,
+            "p50_ms": 512.3,
+            "p95_ms": 534.9
+          },
+          "filtered by department and country": {
+            "n": 21,
+            "p50_ms": 76.2,
+            "p95_ms": 83.8
+          },
+          "by hire date": {
+            "n": 21,
+            "p50_ms": 47.5,
+            "p95_ms": 55.9
+          }
+        }
+      },
+      {
+        "clients": 5,
+        "requests": 251,
+        "errors": 0,
+        "error_statuses": {},
+        "throughput_rps": 15.6,
+        "p50_ms": 120.3,
+        "p95_ms": 1003.3,
+        "p99_ms": 1924.9,
+        "max_ms": 2352.1,
+        "server_p50_ms": 119.2,
+        "by_request": {
+          "first page": {
+            "n": 64,
+            "p50_ms": 72.4,
+            "p95_ms": 118.8
+          },
+          "search": {
+            "n": 64,
+            "p50_ms": 721.2,
+            "p95_ms": 1860.4
+          },
+          "filtered by department and country": {
+            "n": 61,
+            "p50_ms": 147.1,
+            "p95_ms": 276.2
+          },
+          "by hire date": {
+            "n": 62,
+            "p50_ms": 77.3,
+            "p95_ms": 125.3
+          }
+        }
+      },
+      {
+        "clients": 10,
+        "requests": 186,
+        "errors": 0,
+        "error_statuses": {},
+        "throughput_rps": 11.4,
+        "p50_ms": 287.0,
+        "p95_ms": 3980.4,
+        "p99_ms": 5283.6,
+        "max_ms": 5397.4,
+        "server_p50_ms": 284.6,
+        "by_request": {
+          "first page": {
+            "n": 48,
+            "p50_ms": 186.9,
+            "p95_ms": 613.6
+          },
+          "search": {
+            "n": 49,
+            "p50_ms": 2104.8,
+            "p95_ms": 5258.9
+          },
+          "filtered by department and country": {
+            "n": 44,
+            "p50_ms": 301.7,
+            "p95_ms": 655.8
+          },
+          "by hire date": {
+            "n": 45,
+            "p50_ms": 177.8,
+            "p95_ms": 558.2
+          }
+        }
+      },
+      {
+        "clients": 20,
+        "requests": 183,
+        "errors": 0,
+        "error_statuses": {},
+        "throughput_rps": 10.6,
+        "p50_ms": 916.2,
+        "p95_ms": 6389.6,
+        "p99_ms": 7911.9,
+        "max_ms": 8129.3,
+        "server_p50_ms": 914.2,
+        "by_request": {
+          "first page": {
+            "n": 47,
+            "p50_ms": 592.4,
+            "p95_ms": 1280.7
+          },
+          "search": {
+            "n": 49,
+            "p50_ms": 3586.4,
+            "p95_ms": 7299.1
+          },
+          "filtered by department and country": {
+            "n": 43,
+            "p50_ms": 1140.6,
+            "p95_ms": 2098.3
+          },
+          "by hire date": {
+            "n": 44,
+            "p50_ms": 539.7,
+            "p95_ms": 1691.1
+          }
+        }
+      },
+      {
+        "clients": 50,
+        "requests": 278,
+        "errors": 0,
+        "error_statuses": {},
+        "throughput_rps": 14.0,
+        "p50_ms": 2867.2,
+        "p95_ms": 7190.7,
+        "p99_ms": 8290.0,
+        "max_ms": 8706.1,
+        "server_p50_ms": 2864.6,
+        "by_request": {
+          "first page": {
+            "n": 70,
+            "p50_ms": 2271.3,
+            "p95_ms": 3819.5
+          },
+          "search": {
+            "n": 76,
+            "p50_ms": 4846.8,
+            "p95_ms": 7987.0
+          },
+          "filtered by department and country": {
+            "n": 63,
+            "p50_ms": 2538.0,
+            "p95_ms": 3750.6
+          },
+          "by hire date": {
+            "n": 69,
+            "p50_ms": 2578.5,
+            "p95_ms": 3923.6
+          }
+        }
+      }
+    ]
+  }
+}

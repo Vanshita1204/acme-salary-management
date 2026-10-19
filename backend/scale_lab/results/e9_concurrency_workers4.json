@@ -1,0 +1,64 @@
+{
+  "environment": {
+    "machine": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "cpu_count": 10,
+    "memory_gb": 16,
+    "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "163848kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-16T11:14:33+00:00"
+  },
+  "database": "acme_lab_1m",
+  "config": {
+    "workers": 4,
+    "pool_size": 5,
+    "max_overflow": 10,
+    "duration_s": 15.0,
+    "analytics_duration_s": 60,
+    "cache": "off"
+  },
+  "results": {
+    "directory": [
+      {
+        "clients": 50,
+        "requests": 283,
+        "errors": 6,
+        "error_statuses": {
+          "503": 6
+        },
+        "throughput_rps": 13.5,
+        "p50_ms": 1263.6,
+        "p95_ms": 11100.9,
+        "p99_ms": 12409.1,
+        "max_ms": 15154.4,
+        "server_p50_ms": 1247.5,
+        "by_request": {
+          "first page": {
+            "n": 74,
+            "p50_ms": 597.7,
+            "p95_ms": 6374.2
+          },
+          "search": {
+            "n": 83,
+            "p50_ms": 8059.6,
+            "p95_ms": 11782.4
+          },
+          "filtered by department and country": {
+            "n": 53,
+            "p50_ms": 1056.7,
+            "p95_ms": 3248.5
+          },
+          "by hire date": {
+            "n": 67,
+            "p50_ms": 678.5,
+            "p95_ms": 2152.3
+          }
+        }
+      }
+    ]
+  }
+}

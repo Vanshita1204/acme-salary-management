@@ -48,6 +48,13 @@ TABLE_PRIVILEGES: dict[str, tuple[str, ...]] = {
     # Daily refresh upserts today's rates.
     "exchange_rates": (SELECT, INSERT, UPDATE),
 }
+# Materialized views (not tables, so not covered by the every-table check): read only.
+VIEW_PRIVILEGES: dict[str, tuple[str, ...]] = {
+    # Each employee's total pay; rebuilt through refresh_employee_totals() below.
+    "employee_totals": (SELECT,),
+}
+# Functions the app may call (they run as the owner, which the role can't do directly).
+FUNCTIONS = ("refresh_employee_totals()",)
 # Sequences the app's inserts draw from directly (identity columns need no grant).
 SEQUENCES = ("employee_code_seq",)
 
@@ -70,11 +77,12 @@ def grant_statements(role: str) -> list[str]:
         f"REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM {role}",
         f"GRANT USAGE ON SCHEMA public TO {role}",
     ]
-    for table, privileges in TABLE_PRIVILEGES.items():
+    for table, privileges in {**TABLE_PRIVILEGES, **VIEW_PRIVILEGES}.items():
         statements.append(f"GRANT {', '.join(privileges)} ON {table} TO {role}")
     statements += [
         f"GRANT USAGE ON SEQUENCE {sequence} TO {role}" for sequence in SEQUENCES
     ]
+    statements += [f"GRANT EXECUTE ON FUNCTION {function} TO {role}" for function in FUNCTIONS]
     return statements
 
 

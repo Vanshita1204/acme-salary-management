@@ -24,6 +24,7 @@ from sqlalchemy import (
     and_,
     case,
     cast,
+    exists,
     func,
     literal,
     null,
@@ -34,6 +35,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import ARRAY, array, array_agg
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.domain.analytics import MIN_PEER_GROUP_SIZE, OUTLIER_HIGH, OUTLIER_LOW
 from app.domain.compensation import NON_INCREASE_REASONS
 from app.models import (
@@ -48,13 +50,14 @@ from app.models import (
     JobLevel,
     JobTitle,
 )
-from app.services.compensation import promote_due_records, utc_today
+from app.services.compensation import promote_due_records_for_request, utc_today
 from app.services.directory import (
     DirectoryQuery,
     annual_totals,
     apply_filters,
     latest_rate_rows,
 )
+from app.services.employee_totals import employee_totals
 from app.services.errors import Problem, ServiceError
 from app.services.exchange_rates import latest_rates, require_supported_currency
 from app.services.relocation import RELOCATION
@@ -101,7 +104,12 @@ def population(session: Session, query: DirectoryQuery, reporting: str) -> Selec
     """One row per active, matching employee with current compensation:
     ids for grouping, `total_local` (employee's currency) and `total` (reporting
     currency, NULL when a rate is missing)."""
-    totals = annual_totals().subquery()
+    # Stored totals (fast, as fresh as the last refresh) or computed now (always current).
+    totals = (
+        select(employee_totals.c.employee_id, employee_totals.c.total).subquery()
+        if get_settings().use_totals_view
+        else annual_totals().subquery()
+    )
     rates = latest_rate_rows().subquery()
     reporting_rate = (
         select(rates.c.rate_to_usd)
@@ -132,22 +140,42 @@ def population(session: Session, query: DirectoryQuery, reporting: str) -> Selec
     return apply_filters(stmt, replace(query, statuses=[]))
 
 
+def currency_usage(session: Session, query: DirectoryQuery) -> dict[str, int]:
+    """How many employees in the population (as `population` defines it) are paid in each
+    currency. Needs no pay totals. When the stored totals are in use it asks them who has
+    counted pay, which is 3x faster at a million employees (Scale Lab E18) and describes
+    exactly the people `population` reads; otherwise it checks the live pay."""
+    if get_settings().use_totals_view:
+        has_counted_pay = exists().where(employee_totals.c.employee_id == Employee.id)
+    else:
+        has_counted_pay = exists().where(
+            CurrentCompensation.employee_id == Employee.id,
+            CurrentCompensation.compensation_type_id == CompensationType.id,
+            CompensationType.counts_toward_total,
+        )
+    stmt = (
+        select(Employee.currency, func.count())
+        .where(Employee.status == ACTIVE, has_counted_pay)
+        .group_by(Employee.currency)
+    )
+    stmt = apply_filters(stmt, replace(query, statuses=[]))
+    return dict(session.execute(stmt).all())
+
+
 def prepare(session: Session, query: DirectoryQuery) -> tuple[str, Select, Context]:
     reporting = require_supported_currency(session, query.reporting_currency)
-    promote_due_records(session)
+    promote_due_records_for_request(session)
     pop = population(session, query, reporting).subquery()
-    currencies, excluded = session.execute(
-        select(
-            func.array_agg(pop.c.currency.distinct()).filter(pop.c.total.is_not(None)),
-            func.count().filter(pop.c.total.is_(None)),
-        )
-    ).one()
-    _, rate_dates = latest_rates(session)
-    used = set(currencies or []) | {reporting}
+    # An employee is left out of the totals only when converting their currency needs a
+    # rate that isn't stored (an amount already in the reporting currency needs none).
+    rates, rate_dates = latest_rates(session)
+    priced_currency = lambda c: c == reporting or (c in rates and reporting in rates)
+    usage = currency_usage(session, query)
+    used = {c for c in usage if priced_currency(c)} | {reporting}
     context = Context(
         reporting_currency=reporting,
         rates_as_of={c: rate_dates[c] for c in sorted(used) if c in rate_dates},
-        excluded_no_rate=excluded,
+        excluded_no_rate=sum(n for c, n in usage.items() if not priced_currency(c)),
     )
     return reporting, pop, context
 
@@ -375,23 +403,32 @@ def histogram(
     session: Session, query: DirectoryQuery, bins: int
 ) -> tuple[Context, list[Bin]]:
     """Equal-width bins from the lowest to the highest total. The last bin includes
-    its upper bound."""
+    its upper bound. One statement: the bounds and the bin counts share one pass over
+    the population (a CTE used twice is computed once)."""
     _, pop, context = prepare(session, query)
-    total = pop.c.total
-    lo, hi = session.execute(
-        select(func.min(total), func.max(total)).where(total.is_not(None))
-    ).one()
-    if lo is None:
-        return context, []
-    if lo == hi:
-        count = session.scalar(select(func.count()).where(total.is_not(None)))
-        return context, [Bin(money(lo), money(hi), count)]
-    bucket = func.least(func.width_bucket(total, lo, hi, bins), bins)
-    counts = dict(
-        session.execute(
-            select(bucket, func.count()).where(total.is_not(None)).group_by(bucket)
-        ).all()
+    priced = select(pop.c.total).where(pop.c.total.is_not(None)).cte("priced")
+    bounds = select(
+        func.min(priced.c.total).label("lo"), func.max(priced.c.total).label("hi")
+    ).cte("bounds")
+    # width_bucket refuses equal bounds; everyone then falls in the one bin.
+    bucket = case(
+        (bounds.c.lo == bounds.c.hi, 1),
+        else_=func.least(
+            func.width_bucket(priced.c.total, bounds.c.lo, bounds.c.hi, bins), bins
+        ),
     )
+    rows = session.execute(
+        select(bounds.c.lo, bounds.c.hi, bucket.label("bucket"), func.count())
+        .select_from(priced)
+        .join(bounds, true())
+        .group_by(bounds.c.lo, bounds.c.hi, bucket)
+    ).all()
+    if not rows:
+        return context, []
+    lo, hi = rows[0].lo, rows[0].hi
+    if lo == hi:
+        return context, [Bin(money(lo), money(hi), sum(r[3] for r in rows))]
+    counts = {r.bucket: r[3] for r in rows}
     width = (Decimal(hi) - Decimal(lo)) / bins
     return context, [
         Bin(
@@ -431,7 +468,8 @@ def outliers(
     Peer groups are formed from the filtered population, so filtering to one
     department compares people only with peers in that department."""
     _, pop, context = prepare(session, query)
-    priced = select(pop).where(pop.c.total.is_not(None)).subquery()
+    # A CTE used twice below is computed once; a plain subquery is computed per use.
+    priced = select(pop).where(pop.c.total.is_not(None)).cte("priced")
     groups = (
         select(
             priced.c.job_title_id,
@@ -599,7 +637,7 @@ def change_report(
     """
     if date_from > date_to:
         raise ServiceError(Problem.INVALID, INVALID_RANGE)
-    promote_due_records(session)
+    promote_due_records_for_request(session)
     date_to = min(date_to, utc_today())
     # Analytics population without the money: active, matching the filters.
     people = apply_filters(

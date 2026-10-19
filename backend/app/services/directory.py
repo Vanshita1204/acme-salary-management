@@ -10,10 +10,22 @@ same rate.
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
-from typing import Literal
+from typing import Literal, NamedTuple
 
-from sqlalchemy import ColumnElement, Select, String, cast, func, or_, select, tuple_
-from sqlalchemy.dialects.postgresql import distinct_on
+from sqlalchemy import (
+    BigInteger,
+    ColumnElement,
+    Select,
+    String,
+    any_,
+    bindparam,
+    cast,
+    func,
+    or_,
+    select,
+    tuple_,
+)
+from sqlalchemy.dialects.postgresql import ARRAY, distinct_on
 from sqlalchemy.orm import Session, aliased
 
 from app.domain.currency import MissingRateError, convert
@@ -29,18 +41,19 @@ from app.domain.pagination import (
 from app.models import (
     CompensationType,
     CurrentCompensation,
+    Department,
     Employee,
     ExchangeRate,
     JobLevel,
+    JobTitle,
 )
-from app.services.compensation import promote_due_records
+from app.services.compensation import promote_due_records_for_request
 from app.services.exchange_rates import latest_rates, require_supported_currency
 
 Sort = Literal["name", "hire_date", "level", "compensation"]
 DEFAULT_LIMIT = 50
 MAX_LIMIT = 200
 CENT = Decimal("0.01")
-EXPORT_BATCH = 1_000  # employees per totals query when exporting
 NO_TOTAL = -1  # sort key for employees with no compensation yet: last when descending
 
 
@@ -64,7 +77,7 @@ class DirectoryQuery:
 
 @dataclass(frozen=True)
 class DirectoryRow:
-    employee: Employee
+    employee: "Employee | ExportPerson"  # an export row carries only the exported columns
     total: Decimal | None  # annual, employee's currency
     total_reporting: (
         Decimal | None
@@ -247,7 +260,7 @@ def list_employees(session: Session, query: DirectoryQuery) -> DirectoryPage:
     ascending = reads_ascending(query.order, direction)
 
     reporting = require_supported_currency(session, query.reporting_currency)
-    promote_due_records(session)  # future-dated records whose date has arrived
+    promote_due_records_for_request(session)  # future-dated records whose date has arrived
     stmt, keys, parsers = sort_key(query)
     stmt = apply_filters(stmt, query)
     filtered = stmt  # before the cursor and limit; start-of-page counting reuses it
@@ -320,6 +333,24 @@ def list_employees(session: Session, query: DirectoryQuery) -> DirectoryPage:
     )
 
 
+class ExportPerson(NamedTuple):
+    """The columns of one exported row: what the CSV needs, without building a full
+    `Employee` object for every row (Scale Lab E22)."""
+
+    code: str
+    first_name: str
+    last_name: str
+    email: str
+    department: str
+    job_title: str
+    job_level: str
+    current_country: str
+    status: str
+    hire_date: date
+    termination_date: date | None
+    currency: str
+
+
 @dataclass(frozen=True)
 class DirectoryExport:
     rows: list[DirectoryRow]  # every match, in the directory's order
@@ -329,21 +360,64 @@ class DirectoryExport:
 
 def export_employees(session: Session, query: DirectoryQuery) -> DirectoryExport:
     """Every employee matching the directory's search and filters, in its sort order,
-    with the same totals (FR-6). The same statement as `list_employees`, unpaged, so
-    the export is exactly what paging through the directory shows."""
+    with the same totals (FR-6). The same filters and ordering as `list_employees`,
+    unpaged, so the export is exactly what paging through the directory shows.
+
+    Two statements: the exported columns (with the department, title and level names
+    joined in, not a full `Employee` object and three related objects per row), then the
+    annual totals of exactly those employees in one go. Joining the totals into the first
+    statement instead made Postgres total every employee's pay, which at a million
+    employees costs seconds even for a small export (Scale Lab E22)."""
     reporting = require_supported_currency(session, query.reporting_currency)
-    promote_due_records(session)
+    promote_due_records_for_request(session)
     stmt, keys, _ = sort_key(query)
-    stmt = apply_filters(stmt, query)
     ascending = query.order == "asc"
-    stmt = stmt.order_by(*[k.asc() if ascending else k.desc() for k in keys])
-    employees = list(session.scalars(stmt).unique())
+    stmt = (
+        apply_filters(stmt, query)
+        .with_only_columns(
+            Employee.id,
+            Employee.code,
+            Employee.first_name,
+            Employee.last_name,
+            Employee.email,
+            Department.name,
+            JobTitle.name,
+            JobLevel.code,
+            Employee.current_country,
+            Employee.status,
+            Employee.hire_date,
+            Employee.termination_date,
+            Employee.currency,
+            maintain_column_froms=True,
+        )
+        .join(Department, Department.id == Employee.department_id)
+        .join(JobTitle, JobTitle.id == Employee.job_title_id)
+        .join(JobLevel, JobLevel.id == Employee.job_level_id)
+        .order_by(*[k.asc() if ascending else k.desc() for k in keys])
+    )
+    records = session.execute(stmt).all()
+    ids = [record[0] for record in records]
+    # One array parameter, not one bound parameter per id: no limit on the number of ids.
+    ids_param = bindparam("ids", ids, type_=ARRAY(BigInteger))
+    totals = dict(
+        session.execute(
+            annual_totals().where(CurrentCompensation.employee_id == any_(ids_param))
+        ).all()
+    )
 
     rates, rate_dates = latest_rates(session)
     rows = []
-    for start in range(0, len(employees), EXPORT_BATCH):
-        batch = employees[start : start + EXPORT_BATCH]
-        rows += with_totals(session, batch, reporting, rates)
+    for record in records:
+        person = ExportPerson(*record[1:])
+        total = totals.get(record[0])
+        total_reporting = None
+        if total is not None:
+            try:
+                total_reporting = convert(total, person.currency, reporting, rates)
+            except MissingRateError:
+                pass
+            total = total.quantize(CENT)
+        rows.append(DirectoryRow(person, total, total_reporting))
     return DirectoryExport(
         rows=rows, reporting_currency=reporting, rate_dates=rate_dates
     )

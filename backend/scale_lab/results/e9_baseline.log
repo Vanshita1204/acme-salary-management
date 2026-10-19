@@ -1,0 +1,12 @@
+[16:30:16] directory: warming up
+[16:30:36] directory   1 clients      3.2 req/s  p50    201.8 ms  p95    680.1 ms  p99    711.3 ms  server p50    200.2 ms  errors 0
+[16:30:52] directory   5 clients     11.3 req/s  p50    243.7 ms  p95   1100.7 ms  p99   2020.7 ms  server p50    242.7 ms  errors 0
+[16:31:08] directory  10 clients     13.0 req/s  p50    425.3 ms  p95   2451.9 ms  p99   3309.1 ms  server p50    424.2 ms  errors 0
+[16:31:26] directory  20 clients     14.0 req/s  p50    830.0 ms  p95   4255.1 ms  p99   4760.7 ms  server p50    828.2 ms  errors 0
+[16:31:46] directory  50 clients     13.4 req/s  p50   3110.5 ms  p95   6183.1 ms  p99   7435.8 ms  server p50   3109.1 ms  errors 0
+[16:31:46] analytics: warming up
+[16:34:24] analytics   1 clients      0.1 req/s  p50   8071.7 ms  p95  42330.9 ms  p99  42330.9 ms  server p50   8069.4 ms  errors 0
+[16:35:42] analytics   2 clients      0.1 req/s  p50   9340.1 ms  p95  38115.6 ms  p99  38115.6 ms  server p50   9336.0 ms  errors 0
+[16:37:01] analytics   4 clients      0.2 req/s  p50   8721.3 ms  p95  41562.9 ms  p99  41562.9 ms  server p50   8719.2 ms  errors 0
+[16:38:39] analytics   8 clients      0.3 req/s  p50  14318.5 ms  p95  61387.2 ms  p99  67163.4 ms  server p50  14316.9 ms  errors 0
+[16:40:21] analytics  16 clients      0.4 req/s  p50  22881.9 ms  p95  68491.4 ms  p99  89924.8 ms  server p50  22879.6 ms  errors 1

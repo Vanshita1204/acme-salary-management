@@ -322,6 +322,25 @@ def test_promotion_picks_the_newest_due_record_and_leaves_later_ones(
     assert current_record_id(db, employee, catalog["base"]) == third["id"]
 
 
+def test_a_promotion_that_changes_current_pay_marks_the_totals_view_stale(
+    db, client, catalog, employee
+):
+    from app.services.employee_totals import stale
+
+    later = utc_today() + timedelta(days=3650)
+    change(
+        client, catalog, employee, effective_date=str(utc_today() + timedelta(days=10))
+    )
+    stale.clear()
+
+    assert promote_due_records(db, later) >= 1
+    assert stale.is_set()
+
+    stale.clear()
+    assert promote_due_records(db, later) == 0  # nothing moved: nothing stale
+    assert not stale.is_set()
+
+
 def test_promotion_is_a_no_op_once_nothing_is_due(db, client, catalog, employee):
     later = utc_today() + timedelta(days=3650)
     change(

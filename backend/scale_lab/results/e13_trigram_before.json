@@ -1,0 +1,62 @@
+{
+  "environment": {
+    "machine": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "cpu_count": 10,
+    "memory_gb": 16,
+    "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "163848kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-17T18:37:07+00:00"
+  },
+  "database": "acme_lab_1m",
+  "trigram_index_bytes": {},
+  "terms": {
+    "2 characters": {
+      "term": "an",
+      "matches": 311011,
+      "median_ms": 539.7
+    },
+    "3 characters, common": {
+      "term": "son",
+      "matches": 58728,
+      "median_ms": 615.3
+    },
+    "surname": {
+      "term": "abbott",
+      "matches": 218,
+      "median_ms": 2323.8
+    },
+    "part of a full name": {
+      "term": "joan abb",
+      "matches": 3,
+      "median_ms": 2239.7
+    },
+    "part of a code": {
+      "term": "emp-0065",
+      "matches": 100,
+      "median_ms": 2367.8
+    },
+    "part of an email": {
+      "term": "abbott.659",
+      "matches": 0,
+      "median_ms": 1704.4
+    },
+    "no match": {
+      "term": "zzzqqq",
+      "matches": 0,
+      "median_ms": 1645.0
+    }
+  },
+  "insert_100k": {
+    "seconds": [
+      9.8,
+      9.3,
+      9.4
+    ],
+    "best_seconds": 9.3
+  }
+}

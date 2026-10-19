@@ -36,24 +36,39 @@ Tests: `cd backend && pytest` (uses its own `<db>_test` database and never touch
 
 Run on 2026-10-15 (coverage figure from 2026-10-10). The backend suite includes unit tests for the pure domain layer and integration tests against a real Postgres, so the database must be running (`docker compose up -d db`).
 
+## Environments
+
+Defaults are tuned for the 10,000 employees the app is specified for, and `ENVIRONMENT` defaults to `production`. Features built for a million employees (Scale Lab, `docs/PERFORMANCE.md`) turn on only with `ENVIRONMENT=development`, which `backend/.env` sets for local work.
+
+| | Production / default (10,000 employees) | Development (`ENVIRONMENT=development`) |
+| --- | --- | --- |
+| Pay insights read pay totals | computed live: always current | from the `employee_totals` materialized view: faster at 1M, up to a few seconds behind a change |
+| Background refresh of that view | none | after any change, at the end of the daily job, at bootstrap |
+| Postgres in Docker (`docker-compose.yml`) | n/a (Render's managed Postgres) | 512 MB shared memory, 1 GB `shared_buffers`, `pg_stat_statements` |
+
+Not environment-specific, because they cost nothing at 10,000 and help at any size: keyset pagination, the denormalised current-pay table, the pay-insight query rewrites, the 5-minute response cache, trigram search indexes (skipped if the database doesn't allow the extension), and disabling prepared statements.
+
 ## Deploy
 
 One container serves the built frontend and the API (the API under `/api`), so there is nothing to wire together and no CORS.
 
 **On Render (free tier):** New → Blueprint → pick this repo. `render.yaml` creates the web service from the `Dockerfile` and a managed Postgres, and sets `DATABASE_URL` from it.
 
-**Anywhere else:** build the `Dockerfile` and run it with `DATABASE_URL` pointing at a Postgres 16 database (`postgres://…` URLs are accepted). Optional: `EXCHANGE_RATE_API_URL` (defaults to open.er-api.com), `PORT`, `ANALYTICS_CACHE_SECONDS` (default 300; `0` turns the pay-insight cache off).
+**Anywhere else:** build the `Dockerfile` and run it with `DATABASE_URL` pointing at a Postgres 16 database (`postgres://…` URLs are accepted). Optional: `EXCHANGE_RATE_API_URL` (defaults to open.er-api.com), `PORT`, `ANALYTICS_CACHE_SECONDS` (default 300; `0` turns the pay-insight cache off), `COMPRESS_RESPONSES` (default on: gzip for responses of 1 KB or more), `DB_PING_IDLE_SECONDS` (default 10; ping a pooled connection only after it has been idle that long; `0` pings on every checkout), `REFERENCE_CACHE_SECONDS` (default 60; how long exchange rates are remembered; `0` always reads them), `PROMOTE_ONCE_PER_DAY` (default on), `ANALYTICS_TOTALS_VIEW` (unset: on when `ENVIRONMENT=development`, off otherwise; `true`/`false` forces it), `TOTALS_REFRESH_DELAY` (seconds to wait after a change before refreshing the view, default 2), `DB_POOL_SIZE`, `DB_MAX_OVERFLOW`, `DB_POOL_TIMEOUT`.
 
 On every start the container runs `python -m app.bootstrap`, then the daily job in the background, then the server:
 
 1. `alembic upgrade head`
 2. reference data, compensation catalog, change reasons, org structure, companies (insert-only, safe to repeat)
+   (`employee_totals`, a materialized view of every employee's annual total, is kept up to date only in development; see Environments)
 3. the first live exchange-rate fetch (a provider outage is logged, not fatal; the daily job retries)
 4. 10,000 synthetic employees, **only if there are none**: history is append-only, so it is never reseeded
 
 The first start takes about a minute (the seed itself ~10 s on a laptop); later starts take seconds. Health check: `GET /health`.
 
 The daily job (00:10 UTC) refreshes exchange rates and makes future-dated pay changes current. It runs inside the container; if the host spins a free instance down overnight it catches up on the next start, and the app is correct meanwhile because current pay is also resolved on read.
+
+**Extension:** the directory's search uses `pg_trgm` (indexes in migration `0014`); it is a standard Postgres extension, available on Render's managed Postgres, and the migration creates it (the database user needs permission to).
 
 **Optional hardening:** create a role that can only read and insert compensation records (`APP_DB_PASSWORD=… python -m app.db.grants acme_app`) and set `RUNTIME_DATABASE_URL` to it. Migrations keep using `DATABASE_URL`. Managed Postgres plans that don't allow creating roles skip this; the database triggers still block changes to history.
 

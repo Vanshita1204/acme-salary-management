@@ -1,0 +1,34 @@
+{
+  "environment": {
+    "machine": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "cpu_count": 10,
+    "memory_gb": 16,
+    "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "1310728kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-18T20:26:46+00:00"
+  },
+  "directory_page": {
+    "service_sql_orm_totals_ms": 8.451,
+    "build_50_items_ms": 0.652,
+    "validate_response_model_ms": 0.16,
+    "dump_json_pydantic_ms": 0.093,
+    "dump_python_then_json_dumps_ms": 0.222,
+    "bytes": 20433
+  },
+  "outliers_view": {
+    "rows": 422,
+    "service_sql_python_ms": 61.447,
+    "dump_json_pydantic_ms": 0.551,
+    "dump_python_then_json_dumps_ms": 1.301,
+    "bytes": 104112
+  },
+  "framework_server_ms": {
+    "/health": 0.4,
+    "/departments": 2.3
+  }
+}

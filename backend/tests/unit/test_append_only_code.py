@@ -77,7 +77,14 @@ def test_nothing_in_the_api_can_delete_at_all():
 @pytest.mark.parametrize(
     ("env", "expected"),
     [
-        ({"DATABASE_URL": "postgresql+psycopg://owner@h/db"}, "owner"),
+        (
+            # Empty overrides any runtime URL in the developer's .env file.
+            {
+                "DATABASE_URL": "postgresql+psycopg://owner@h/db",
+                "RUNTIME_DATABASE_URL": "",
+            },
+            "owner",
+        ),
         (
             {
                 "DATABASE_URL": "postgresql+psycopg://owner@h/db",

@@ -19,6 +19,7 @@ from alembic import command
 from alembic.config import Config
 from sqlalchemy import func, select
 
+from app.core.config import get_settings
 from app.db.session import SessionLocal
 from app.models import Employee
 from app.seed.change_reasons import check_change_reasons, load_change_reasons
@@ -30,6 +31,7 @@ from app.seed.compensation_types import (
 from app.seed.employees import DEFAULT_COUNT, seed_employees
 from app.seed.org_structure import check_org_structure, load_org_structure
 from app.seed.reference import check_reference_data, load_reference_data
+from app.services.employee_totals import refresh_totals
 from app.services.exchange_rates import refresh_exchange_rates
 
 BACKEND = Path(__file__).resolve().parent.parent
@@ -83,6 +85,15 @@ def seed_population(count: int) -> str:
     return f"seeded {counts['employees']} employees in {time.perf_counter() - started:.0f}s"
 
 
+def build_totals() -> str:
+    if not get_settings().use_totals_view:
+        return "employee totals view not in use in this environment"
+    with SessionLocal() as session:
+        started = time.perf_counter()
+        refresh_totals(session)
+    return f"employee totals refreshed in {time.perf_counter() - started:.1f}s"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Migrate and seed the database.")
     parser.add_argument("--employees", type=int, default=DEFAULT_COUNT)
@@ -94,6 +105,7 @@ def main() -> None:
     print("reference data, catalog, reasons and org structure ready", flush=True)
     print(fetch_rates(), flush=True)
     print(seed_population(args.employees), flush=True)
+    print(build_totals(), flush=True)
 
 
 if __name__ == "__main__":
