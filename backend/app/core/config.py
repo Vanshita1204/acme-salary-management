@@ -53,6 +53,10 @@ class Settings(BaseSettings):
     compress_responses: bool = True
     # How long an identical pay-insight request is answered from memory (0 turns it off).
     analytics_cache_seconds: float = 300
+    # At most this many pay-insight requests run at once; the rest wait their turn, up to
+    # heavy_wait_seconds, then get a 503 (Scale Lab E27). 0 turns the cap off.
+    heavy_concurrency: int = 2
+    heavy_wait_seconds: float = 60
 
     @property
     def use_totals_view(self) -> bool:

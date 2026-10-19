@@ -5,10 +5,11 @@ from dataclasses import asdict
 from datetime import date
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Query
+from fastapi import APIRouter, Depends, Query
 
 from app.api.deps import DbSession
 from app.api.employees import DirectoryView
+from app.core.limiter import limit_heavy_requests
 from app.domain.analytics import MIN_PEER_GROUP_SIZE, OUTLIER_HIGH, OUTLIER_LOW
 from app.schemas.analytics import (
     ChangeReportOut,
@@ -21,7 +22,11 @@ from app.schemas.analytics import (
 )
 from app.services import analytics
 
-router = APIRouter(prefix="/analytics", tags=["analytics"])
+router = APIRouter(
+    prefix="/analytics",
+    tags=["analytics"],
+    dependencies=[Depends(limit_heavy_requests)],
+)
 
 
 def context(ctx: analytics.Context) -> dict:
