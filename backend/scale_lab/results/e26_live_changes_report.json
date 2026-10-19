@@ -1,0 +1,11 @@
+{
+  "url": "https://acme-salary-management-ee70.onrender.com/api/analytics/changes",
+  "method": "5 sequential requests per range, ending today, limit 25, throwaway query parameter (cache bypassed); figures from the last request's Server-Timing, total is the median of 5",
+  "before_ms": {"server_alone": 7500},
+  "after": {
+    "week": {"events": 17, "server_ms": 89.2, "db_ms": 71.8, "queries": 4, "median_total_ms": 592},
+    "month": {"events": 1160, "server_ms": 190.6, "db_ms": 178.2, "queries": 4, "median_total_ms": 508},
+    "quarter": {"events": 1608, "server_ms": 159.1, "db_ms": 104.8, "queries": 4, "median_total_ms": 495},
+    "year": {"events": 19947, "server_ms": 595.6, "db_ms": 585.0, "queries": 4, "median_total_ms": 899}
+  }
+}

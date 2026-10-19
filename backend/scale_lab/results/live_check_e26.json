@@ -1,0 +1,88 @@
+{
+  "environment": {
+    "machine": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "cpu_count": 10,
+    "memory_gb": 16,
+    "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "1310728kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-19T08:06:08+00:00"
+  },
+  "first_request_ms": 503,
+  "reference list": {
+    "total_ms": 291,
+    "server_ms": 5,
+    "db_ms": 2,
+    "queries": 1,
+    "bytes": 139,
+    "encoding": "gzip"
+  },
+  "directory page": {
+    "total_ms": 330,
+    "server_ms": 46,
+    "db_ms": 19,
+    "queries": 3,
+    "bytes": 3405,
+    "encoding": "gzip"
+  },
+  "directory search": {
+    "total_ms": 514,
+    "server_ms": 232,
+    "db_ms": 205,
+    "queries": 3,
+    "bytes": 3037,
+    "encoding": "gzip"
+  },
+  "employee profile": {
+    "total_ms": 304,
+    "server_ms": 11,
+    "db_ms": 5,
+    "queries": 3,
+    "bytes": 792,
+    "encoding": "gzip"
+  },
+  "pay insight: summary": {
+    "total_ms": 1234,
+    "server_ms": 930,
+    "db_ms": 907,
+    "queries": 2,
+    "bytes": 1163,
+    "encoding": "gzip"
+  },
+  "pay insight: outliers": {
+    "total_ms": 1480,
+    "server_ms": 1016,
+    "db_ms": 980,
+    "queries": 2,
+    "bytes": 17960,
+    "encoding": "gzip"
+  },
+  "pay insight: histogram": {
+    "total_ms": 897,
+    "server_ms": 621,
+    "db_ms": 609,
+    "queries": 2,
+    "bytes": 446,
+    "encoding": "gzip"
+  },
+  "CSV export": {
+    "total_ms": 3499,
+    "server_ms": 2135,
+    "db_ms": 1134,
+    "queries": 2,
+    "bytes": 397139,
+    "encoding": "gzip"
+  },
+  "bundle": {
+    "total_ms": 340,
+    "bytes": 103834,
+    "encoding": "gzip",
+    "cache_control": "public, max-age=31536000, immutable"
+  },
+  "url": "https://acme-salary-management-ee70.onrender.com",
+  "runs_each": 8
+}
