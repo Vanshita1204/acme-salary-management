@@ -126,7 +126,7 @@ erDiagram
     COMPENSATION_RECORDS ||--o| CURRENT_COMPENSATION : "pointed to by"
 ```
 
-The same diagram is in [`database-design.mmd`](database-design.mmd), and rendered as an image: ![ER diagram](database-er-diagram.png)
+The same diagram is in [`database-design.mmd`](database-design.mmd), and rendered as an image: ![ER diagram](database_design.png)
 
 `employees.current_country` and every `compensation_records.country` reference `countries`; every currency column references `currencies`, including the new `employees.currency` — the employee's **authoritative current pay currency**, decoupled from country (an employee can be based in one country and paid in another's currency). `employees.company_id` references `companies` — that's just which ACME entity an employee belongs to; `compensation_types` is not scoped by company at all, it's one universal catalog every employee at every company draws from.
 
@@ -421,6 +421,105 @@ CREATE INDEX ix_exchange_rates_latest ON exchange_rates (currency, rate_date DES
 
 ---
 
+## Derived data: `employee_totals` and the pay-change events
+
+Everything above is source data. The objects below are **derived**: they hold nothing that cannot be rebuilt from `compensation_records` and `current_compensation`, they exist only to make reads fast, and the application can compute the same answers without them. That is an exception to the earlier rule that total compensation is never stored, so the rule is restated precisely: *no derived copy is ever the source of truth, and each can be dropped and rebuilt.* They were added after the Scale Lab measurements (`docs/PERFORMANCE.md`, E12 and E26).
+
+### `employee_totals` (materialized view, development only)
+
+```sql
+CREATE MATERIALIZED VIEW employee_totals AS
+SELECT cc.employee_id, sum(cc.amount * 12 / ct.period_months) AS total   -- annual, employee's currency
+  FROM current_compensation cc
+  JOIN compensation_types ct ON ct.id = cc.compensation_type_id
+ WHERE ct.counts_toward_total
+ GROUP BY cc.employee_id;
+CREATE UNIQUE INDEX ux_employee_totals_employee ON employee_totals (employee_id);
+```
+
+- Read by the pay-insight views only when `ENVIRONMENT=development` (or `ANALYTICS_TOTALS_VIEW=true`); production computes the same sum live.
+- Refreshed `CONCURRENTLY` by `refresh_employee_totals()` (a `SECURITY DEFINER` function, because refreshing needs ownership), shortly after writes, by the daily job and at bootstrap. It is a snapshot: a few seconds behind a change.
+
+### `pay_change_events`: one row per employee per day on which their pay changed
+
+The pay-changes report (FR "who had a compensation change in a period, and what was the average increase") needs, for each employee and each effective date in the period, the annual total compensation the day before and on the day. Computing that from the history windows over every compensation record on every request (7.5 s on the free tier at 10,000 employees, 26 to 43 s at 1,000,000; E16, E25). The same figures can be computed once per day and stored.
+
+```sql
+CREATE TABLE pay_change_events (
+    employee_id  BIGINT       NOT NULL REFERENCES employees(id),
+    day          DATE         NOT NULL,          -- the effective date of the change
+    reasons      TEXT[]       NOT NULL,          -- change_reasons.code of that day's records
+    currency     CHAR(3)      NOT NULL REFERENCES currencies(code),   -- pay currency on that day
+    before_total NUMERIC,                        -- annual CTC the day before; NULL = no pay before (a first pay)
+    after_total  NUMERIC,                        -- annual CTC on the day
+    percent      NUMERIC,                        -- (after - before) / before * 100; NULL when excluded
+    excluded     TEXT CHECK (excluded IN ('correction', 'outside total compensation', 'no previous pay',
+                                          'currency change', 'relocation without a pay change')),
+    PRIMARY KEY (employee_id, day)
+);
+CREATE INDEX ix_pay_change_events_day ON pay_change_events (day DESC, employee_id);
+```
+
+- **Same rules as the report:** one event per employee per effective date; its change is the employee's annual CTC from the latest record of each type on that date against the day before, in their own currency (no exchange rates). `excluded` is `NULL` when the event counts toward the average increase; otherwise it names why not. The classification is exactly the report's existing one, so nothing about its answers changes.
+- **Independent of filters.** All employees are stored, whatever their status or department; the report applies "active" and the directory filters when it reads. `percent` is stored unrounded so a read reproduces today's figures.
+- **Only past days.** The table holds days up to and including `pay_change_progress.filled_through`. The report computes the remaining days (today, or a few more if the daily job has not run) live, restricted to the employees who have records on those days.
+
+### `pay_change_progress`
+
+```sql
+CREATE TABLE pay_change_progress (
+    id             BOOLEAN PRIMARY KEY DEFAULT true CHECK (id),   -- exactly one row
+    filled_through DATE                                           -- NULL until the first backfill
+);
+INSERT INTO pay_change_progress (filled_through) VALUES (NULL);
+```
+
+### `pay_change_dirty` and the trigger that feeds it
+
+A **backdated** record (effective date on or before `filled_through`) can change the totals of every later event of that employee, so those events must be recomputed. The database notices, whichever code path inserted the record (a pay change, a relocation, an import, a seed).
+
+```sql
+CREATE TABLE pay_change_dirty (
+    employee_id BIGINT PRIMARY KEY REFERENCES employees(id),
+    from_day    DATE   NOT NULL        -- earliest backdated record not yet reflected in the events
+);
+
+CREATE FUNCTION mark_pay_change_dirty() RETURNS trigger LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+BEGIN
+    INSERT INTO pay_change_dirty (employee_id, from_day)
+    SELECT n.employee_id, min(n.effective_date)
+      FROM new_rows n
+     WHERE n.effective_date <= (SELECT filled_through FROM pay_change_progress)   -- false while NULL
+     GROUP BY n.employee_id
+    ON CONFLICT (employee_id) DO UPDATE SET from_day = LEAST(pay_change_dirty.from_day, EXCLUDED.from_day);
+    RETURN NULL;
+END $$;
+
+CREATE TRIGGER trg_comp_records_pay_change_dirty
+    AFTER INSERT ON compensation_records
+    REFERENCING NEW TABLE AS new_rows
+    FOR EACH STATEMENT EXECUTE FUNCTION mark_pay_change_dirty();
+```
+
+A statement-level trigger with a transition table, so a bulk insert (an import of thousands of employees, a seed) costs one statement, not one per row. Records dated today or in the future (almost every write: new hires, raises, future-dated changes) add nothing.
+
+### Maintenance rules
+
+1. **Backfill.** While `filled_through` is `NULL` (a new database, or after a rebuild), compute the events for all history up to yesterday, set `filled_through` to yesterday and empty `pay_change_dirty`. At bootstrap, before the app serves traffic.
+2. **Daily fill.** The daily job computes the events of every day after `filled_through` up to yesterday (a day with no events adds no rows) and advances `filled_through`. It only ever appends; it is idempotent.
+3. **Dirty employees.** Before the report reads, any employee in `pay_change_dirty` has their events from `from_day` up to `filled_through` deleted and recomputed in one transaction, and the row removed. When nothing is dirty this is a single empty read.
+4. **Live tail.** The report adds the events of the days after `filled_through` (normally just today), computed from the history restricted to employees with records in those days.
+5. **Invariant.** For every day `d <= filled_through` and every employee, the stored row equals what the live computation gives from the records present now, or the employee is in `pay_change_dirty` with `from_day <= d`. A test compares the report from the table with the live computation across ranges, filters, corrections, relocations, currency changes and backdated records.
+6. **The live computation stays.** It is the source for every fill, for the live tail, and for the test above; `PAY_CHANGE_EVENTS=false` makes the report use it alone.
+
+### Privileges and size
+
+- Derived and rebuildable, and still least-privilege. The application role may `SELECT`, `INSERT` and `UPDATE` `pay_change_events` (events are added or refreshed, never deleted: a new record cannot remove an event day), `SELECT` and `DELETE` `pay_change_dirty` (a work queue: the trigger, running as its owner, fills it; the app takes entries off), and `SELECT` and `UPDATE` `pay_change_progress`. The history stays append-only.
+- Size, measured (0.66 events per compensation record): 10,000 employees give 116,846 rows, 22 MB with the index (13 MB table, 9 MB index); 1,000,000 employees give 11,773,353 rows, 2.2 GB (1.3 GB table, 0.9 GB indexes). Older years could be left out and computed live if this matters.
+- **Why not a materialized view:** a refresh recomputes everything (11.8 M events at 1M); the watermark and the dirty list make maintenance incremental. **Why not cache the report by date range:** the default range ends today, and every department or country filter would be a separate entry; per-day events are independent of the filters.
+
+---
+
 ## Business rules → enforcement mechanism (§6 traceability, updated)
 
 | Rule | Mechanism |
@@ -457,6 +556,7 @@ CREATE INDEX ix_exchange_rates_latest ON exchange_rates (currency, rate_date DES
 | All current amounts of one type, across employees (composition breakdown) | `(compensation_type_id)` on `current_compensation` |
 | History for one employee+type, reverse chronological | `(employee_id, compensation_type_id, effective_date DESC)` on `compensation_records` |
 | Latest rate per currency | `(currency, rate_date DESC)` on `exchange_rates` |
+| Pay changes in a date range | `(day DESC, employee_id)` on `pay_change_events` |
 
 ## Migration note
 

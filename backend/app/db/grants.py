@@ -53,6 +53,14 @@ VIEW_PRIVILEGES: dict[str, tuple[str, ...]] = {
     # Each employee's total pay; rebuilt through refresh_employee_totals() below.
     "employee_totals": (SELECT,),
 }
+# Derived data (docs/DATABASE_DESIGN.md, "Derived data"), rebuildable from the history.
+# Events are only ever added or refreshed, never deleted; the dirty list is a work queue
+# (the trigger fills it, the app takes entries off it), so it is the one that needs DELETE.
+DERIVED_PRIVILEGES: dict[str, tuple[str, ...]] = {
+    "pay_change_events": (SELECT, INSERT, UPDATE),
+    "pay_change_dirty": (SELECT, "DELETE"),
+    "pay_change_progress": (SELECT, UPDATE),
+}
 # Functions the app may call (they run as the owner, which the role can't do directly).
 FUNCTIONS = ("refresh_employee_totals()",)
 # Sequences the app's inserts draw from directly (identity columns need no grant).
@@ -77,7 +85,11 @@ def grant_statements(role: str) -> list[str]:
         f"REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM {role}",
         f"GRANT USAGE ON SCHEMA public TO {role}",
     ]
-    for table, privileges in {**TABLE_PRIVILEGES, **VIEW_PRIVILEGES}.items():
+    for table, privileges in {
+        **TABLE_PRIVILEGES,
+        **VIEW_PRIVILEGES,
+        **DERIVED_PRIVILEGES,
+    }.items():
         statements.append(f"GRANT {', '.join(privileges)} ON {table} TO {role}")
     statements += [
         f"GRANT USAGE ON SEQUENCE {sequence} TO {role}" for sequence in SEQUENCES
