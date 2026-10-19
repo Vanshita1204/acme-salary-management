@@ -103,4 +103,4 @@ What keeps the page usable:
 - **The CSV export is smaller and faster:** 397 KB instead of 1.5 MB, and 1.9 s of server time instead of 4.8 s.
 - **Static files are cached for good.** The built JavaScript and CSS are served `immutable`, so a repeat visit downloads nothing. (Render's edge already gzips text responses.)
 
-Not known: whether the trigram search indexes exist on the hosted database (the migration skips them if `pg_trgm` is not permitted). Directory search takes 207 ms there against 25 ms on a laptop; `\d employees` in the database shell shows whether `ix_employees_trgm_*` are present.
+Checked: the four trigram search indexes (`ix_employees_trgm_*`) and the `pg_trgm` extension exist on the hosted database. Directory search still takes 207 ms there against 25 ms on a laptop; at 10,000 employees Postgres may reasonably scan the table instead of using them, and the free-tier CPU is slower.

@@ -81,7 +81,7 @@ Written backend-only; the author adds one closing paragraph on the frontend. Num
 
 - Same 10,000 employees, live: outliers **2.6 s to 1.0 s**, histogram 1.4 s to 0.7 s, export 4.8 s to 1.9 s (1.5 MB to 0.4 MB), 6 to 3 queries per request.
 - What did not carry over: the directory gained only 6 ms (round trips are cheaper on Render than my simulation); the summary only 1.2 times; Render's edge already gzips text; the free-tier CPU makes the heavy views about **11 to 14 times slower than a laptop**.
-- What I do not know: whether the trigram indexes exist on Render (search is still 195 ms of database time). Say it plainly.
+- Checked afterwards: the trigram indexes do exist on Render, so that explanation is out. What I still do not know: why search is 195 ms of database time there (a sequential scan of 10,000 rows or a slow CPU; `EXPLAIN` on Render would say). Say it plainly.
 - Cold start: 54 s on the first request after idle.
 
 ## 12. Scorecard
