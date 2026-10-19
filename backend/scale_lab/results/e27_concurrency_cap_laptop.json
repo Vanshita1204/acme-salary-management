@@ -1,0 +1,97 @@
+{
+  "environment": {
+    "machine": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "cpu_count": 10,
+    "memory_gb": 16,
+    "postgres": "16.15 (Debian 16.15-1.pgdg13+2)",
+    "postgres_settings": {
+      "effective_cache_size": "5242888kB",
+      "max_parallel_workers_per_gather": "2",
+      "shared_buffers": "1310728kB",
+      "work_mem": "4096kB"
+    },
+    "run_at": "2026-10-19T08:33:10+00:00"
+  },
+  "caps": {
+    "off": {
+      "1_users": {
+        "users": 1,
+        "page_ms_median": 93,
+        "page_ms_max": 146,
+        "view_ms_median": 82,
+        "view_ms_fastest": 47,
+        "everyone_done_ms_median": 93,
+        "errors": 0
+      },
+      "3_users": {
+        "users": 3,
+        "page_ms_median": 203,
+        "page_ms_max": 215,
+        "view_ms_median": 167,
+        "view_ms_fastest": 44,
+        "everyone_done_ms_median": 212,
+        "errors": 0
+      }
+    },
+    "4": {
+      "1_users": {
+        "users": 1,
+        "page_ms_median": 105,
+        "page_ms_max": 152,
+        "view_ms_median": 58,
+        "view_ms_fastest": 35,
+        "everyone_done_ms_median": 105,
+        "errors": 0
+      },
+      "3_users": {
+        "users": 3,
+        "page_ms_median": 258,
+        "page_ms_max": 298,
+        "view_ms_median": 142,
+        "view_ms_fastest": 40,
+        "everyone_done_ms_median": 269,
+        "errors": 0
+      }
+    },
+    "2": {
+      "1_users": {
+        "users": 1,
+        "page_ms_median": 145,
+        "page_ms_max": 209,
+        "view_ms_median": 92,
+        "view_ms_fastest": 32,
+        "everyone_done_ms_median": 146,
+        "errors": 0
+      },
+      "3_users": {
+        "users": 3,
+        "page_ms_median": 412,
+        "page_ms_max": 463,
+        "view_ms_median": 229,
+        "view_ms_fastest": 34,
+        "everyone_done_ms_median": 442,
+        "errors": 0
+      }
+    },
+    "1": {
+      "1_users": {
+        "users": 1,
+        "page_ms_median": 298,
+        "page_ms_max": 344,
+        "view_ms_median": 146,
+        "view_ms_fastest": 37,
+        "everyone_done_ms_median": 298,
+        "errors": 0
+      },
+      "3_users": {
+        "users": 3,
+        "page_ms_median": 833,
+        "page_ms_max": 911,
+        "view_ms_median": 413,
+        "view_ms_fastest": 43,
+        "everyone_done_ms_median": 898,
+        "errors": 0
+      }
+    }
+  }
+}

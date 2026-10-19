@@ -1039,7 +1039,7 @@ Other findings from the same runs: the first request after the service had been 
 
 **Verdicts:**
 
-1. **Partly refuted.** Search fell from 503 to **207 ms**, not to a few milliseconds. 195 ms of that is still database time, against about 25 ms on a laptop. Two explanations fit and the measurement cannot separate them: the trigram migration skipped its indexes on Render (it is written to do so when `pg_trgm` is not permitted), or the indexes exist but Postgres chooses a sequential scan, which is reasonable on 10,000 rows. The improvement seen could come from the prepared-statement fix alone. **Not verified**: it needs `\d employees` in Render's database shell, to look for `ix_employees_trgm_*`.
+1. **Partly refuted.** Search fell from 503 to **207 ms**, not to a few milliseconds. 195 ms of that is still database time, against about 25 ms on a laptop. The first explanation, that the trigram migration skipped its indexes on Render, is **ruled out**: a query of `pg_indexes` and `pg_extension` on Render's database found all four `ix_employees_trgm_*` indexes and `pg_trgm`. What remains is that Postgres scans the table anyway (reasonable on 10,000 rows) and the free-tier CPU is slow; whether the planner uses the indexes for `q=smith` was not checked (`EXPLAIN` on Render would show it).
 2. **Confirmed.** The export's server time fell from 4.8 s to 1.9 s (2.5×), and its download from 1.5 MB to 397 KB; the whole request from 6.5 s to 3.8 s.
 3. **Confirmed for the queries, smaller than simulated for the time.** Queries per request fell from 6 to 3, but the directory page gained only 6 ms (26 → 20) and the profile 8 ms. Round trips on Render cost less than the 1 to 3 ms the proxy simulated, so the saving is smaller than E24 predicted for a distant database.
 4. **Better than predicted for two views, as predicted for one.** Outliers fell from 2.6 s to **0.99 s (2.7×)** and the histogram from 1.4 s to **0.70 s (2.1×)**, from the query rewrites (E11) and the prepared-statement fix. The summary fell only from 1.13 s to 0.93 s (1.2×). All three are still 0.7 to 1.0 s of pure database time on the shared CPU, about 11 to 14 times slower than the same view on a laptop (65, 89 and 62 ms there for the summary, outliers and histogram); nothing in this release changes that on 10,000 employees, and a repeat request is served from the response cache.
@@ -1101,6 +1101,25 @@ The event counts equal the number of (employee, date) pairs I counted in the his
 
 ---
 
+## E27 — A cap on concurrent pay-insight requests
+
+E25 found that the Pay insights page, which asks for seven views at once, took 4 to 16 s on Render while each view alone took 1 to 2 s: on a small server the views share the CPU and all finish late. A cap makes the extra requests wait their turn in the API process, before a database connection is taken, so each running view gets more CPU. `HEAVY_CONCURRENCY` (default 2; `0` turns it off) and `HEAVY_WAIT_SECONDS` (default 60, then a 503 with `Retry-After`) apply to every `/analytics/*` route.
+
+**Method.** `backend/scale_lab/e27_concurrency_cap.py` starts the API with each cap and loads the page like a browser (seven views together), as one user and as three at the same moment, response cache off, 10,000 employees, median of 3 rounds after a warm-up. Run twice: on the laptop as it is, and with the database container limited to **0.5 CPU** (`docker update --cpus 0.5`) to imitate a small server. This is an imitation: Render's real limits and noisy neighbours differ. I wrote no hypothesis before the first run; the expectation (a cap helps only when the CPU is the bottleneck) was formed after the laptop run, which is why the second run exists.
+
+**Results** (time until all seven views of a page have arrived, median):
+
+| Cap | Laptop, 1 user | Laptop, 3 users | 0.5 CPU, 1 user | 0.5 CPU, 3 users |
+|---|---|---|---|---|
+| off | 93 ms | 203 ms | 948 ms | 3,592 ms |
+| 4 | 105 ms | 258 ms | 815 ms | 2,309 ms |
+| 2 | 145 ms | 412 ms | 485 ms | 1,394 ms |
+| 1 | 298 ms | 833 ms | 484 ms | 1,352 ms |
+
+No request failed in any run. Raw numbers: `e27_concurrency_cap_laptop.json`, `e27_concurrency_cap_half_cpu.json`.
+
+**Reading.** With ten free cores the cap is pure cost (a cap of 2 makes the page 1.6 times slower: the views queue although the CPU is idle). When the database has one half CPU it is a large gain: the three-user case drops from 3.6 s to 1.4 s (2.6 times) and a single user from 0.95 s to 0.49 s. Under the cap the work is the same, so the gain is the CPU lost to contention; a cap of 1 is no better than 2, so 2 is the default. On a quiet server the one first view arrives much sooner (the fastest view: 89 ms at cap 2 against 419 ms uncapped at 0.5 CPU). **Not measured on Render.** The cap is a trade: it helps where the server is small and busy, and costs where it is large and idle.
+
 ## Summary — what the lab confirmed or changed
 
 | Decision | Status | Evidence |
@@ -1132,5 +1151,6 @@ The event counts equal the number of (employee, date) pairs I counted in the his
 | CSV export | **Changed** (columns only, one totals query, leaner writer) | E22: 10k export 455 ms to 178 ms as an HTTP request, identical file; 1M one-country export 1.7-1.9x faster; a joined-totals first attempt was slower at 1M |
 | Serialisation (`orjson`) | **Not adopted** (refuted) | E23: the response encoder is 0.09 ms of a 12 ms directory request and 0.55 ms of 89 ms for the largest view; FastAPI already serialises through Pydantic's Rust core |
 | Database round trips | **Changed** (idle-only ping, remembered currencies and rates, promotion once a day) | E24: directory 9 to 5 round trips, 58 to 35 ms at 3 ms of database latency; responses byte-identical; one failed request after a database restart is the cost |
-| Live app on Render, before and after the release | Measured | E25: outliers 2.6 s to 1.0 s, histogram 1.4 s to 0.7 s, export 4.8 s to 1.9 s (1.5 MB to 0.4 MB), 6 to 3 queries per request; search 503 to 207 ms (trigram indexes on Render unverified); summary only 1.2x |
+| Live app on Render, before and after the release | Measured | E25: outliers 2.6 s to 1.0 s, histogram 1.4 s to 0.7 s, export 4.8 s to 1.9 s (1.5 MB to 0.4 MB), 6 to 3 queries per request; search 503 to 207 ms (trigram indexes exist on Render; why search is still 195 ms of database time is not established); summary only 1.2x |
 | Precomputed pay-change events | **Changed** (production and development; tables `pay_change_events`, `_progress`, `_dirty`, migration `0015`) | E26: report 8x faster at 10,000 employees (399 to 49 ms), 12x for a month at 1M (26 to 2.1 s), 4.6x for a year (51 to 11 s); identical results; 2.2 GB and a 10-minute backfill at 1M; live on Render: 7.5 s to 0.19 s for a month (about 40x), 0.6 s for a year |
+| Cap on concurrent pay-insight requests (`HEAVY_CONCURRENCY=2`) | **Changed** (production and development) | E27: with the database limited to 0.5 CPU, the page with three users 3.6 s to 1.4 s (2.6x), one user 0.95 s to 0.49 s; with 10 free cores it is 1.6x slower; Render not yet measured |
